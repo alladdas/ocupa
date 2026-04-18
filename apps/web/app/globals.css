@@ -1,0 +1,114 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Light mode (default) ─────────────────────────────────── */
+:root {
+  --background: #f6f8f7;
+  --foreground: #1d161d;
+
+  --d-bg: #f6f8f7;
+  --d-nav: #ffffff;
+  --d-white: #ffffff;
+  --d-border: #d1d6d3;
+  --d-text: #1d161d;
+  --d-text-2: #574e57;
+  --d-muted: #a89ea8;
+
+  /* Accent — green in light mode */
+  --d-accent: #2f8d6a;
+  --d-accent-light: rgba(232, 244, 237, 0.6);
+  --d-accent-hover: #1e7a57;
+  --d-accent-subtle: rgba(47, 141, 106, 0.10);
+  --d-accent-border: rgba(47, 141, 106, 0.30);
+  --d-accent-text: #1a6e4f;
+  --d-accent-bg: rgba(47, 141, 106, 0.04);
+
+  /* Neutral surfaces */
+  --d-surface: rgba(0, 0, 0, 0.04);
+  --d-surface-hover: rgba(0, 0, 0, 0.025);
+  --d-tag-bg: rgba(0, 0, 0, 0.05);
+  --d-btn-hover: rgba(0, 0, 0, 0.05);
+}
+
+/* ─── Dark mode ─────────────────────────────────────────────── */
+.dark {
+  --background: #09090b;
+  --foreground: #fafafa;
+
+  --d-bg: #0a0a0f;
+  --d-nav: #0d0d14;
+  --d-white: #f4f4f8;
+  --d-border: rgba(255, 255, 255, 0.07);
+  --d-text: #e8e8f0;
+  --d-text-2: #9898b8;
+  --d-muted: #52527a;
+
+  /* Accent — violet in dark mode */
+  --d-accent: #7c3aed;
+  --d-accent-light: rgba(124, 58, 237, 0.15);
+  --d-accent-hover: #6d28d9;
+  --d-accent-subtle: rgba(124, 58, 237, 0.12);
+  --d-accent-border: rgba(124, 58, 237, 0.28);
+  --d-accent-text: #a78bfa;
+  --d-accent-bg: rgba(124, 58, 237, 0.04);
+
+  /* Neutral surfaces */
+  --d-surface: rgba(255, 255, 255, 0.04);
+  --d-surface-hover: rgba(255, 255, 255, 0.025);
+  --d-tag-bg: rgba(255, 255, 255, 0.06);
+  --d-btn-hover: rgba(255, 255, 255, 0.08);
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Accent-tinted scrollbar */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--d-accent-border) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: var(--d-accent-border);
+    border-radius: 2px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: var(--d-accent);
+    opacity: 0.5;
+  }
+
+  .font-mono-dm {
+    font-family: var(--font-dm-mono, 'Courier New', monospace);
+  }
+
+  /* Used by UpgradeModal conic-gradient spinning border */
+  .animate-rotate-gradient {
+    animation: rotate-gradient 3s linear infinite;
+  }
+}
+
+@keyframes rotate-gradient {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
