@@ -13,6 +13,39 @@ interface JobRowProps {
   job: Job
 }
 
+function CompanyLogo({ job }: { job: Job }) {
+  const [imgFailed, setImgFailed] = useState(false)
+  const initials = getCompanyInitials(job.company)
+  const colorClass = getCompanyColor(job.companySlug)
+
+  if (job.logoUrl && !imgFailed) {
+    return (
+      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-white"
+        style={{ borderColor: 'var(--d-border)' }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={job.logoUrl}
+          alt={job.company}
+          className="h-7 w-7 object-contain"
+          onError={() => setImgFailed(true)}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className={cn(
+        'flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-[11px] font-bold text-white',
+        colorClass
+      )}
+    >
+      {initials}
+    </div>
+  )
+}
+
 export default function JobRow({ job }: JobRowProps) {
   const [expanded, setExpanded] = useState(false)
   const { openAuthModal } = useAuthModal()
@@ -20,9 +53,6 @@ export default function JobRow({ job }: JobRowProps) {
   const { user } = useUser()
 
   const handleApply = user ? openUpgradeModal : openAuthModal
-
-  const initials = getCompanyInitials(job.company)
-  const colorClass = getCompanyColor(job.companySlug)
 
   return (
     <div
@@ -34,15 +64,7 @@ export default function JobRow({ job }: JobRowProps) {
         className="flex cursor-pointer items-center gap-3 px-4 py-3 hover:bg-black/[0.02] dark:hover:bg-white/[0.02]"
         onClick={() => setExpanded((v) => !v)}
       >
-        {/* Company logo */}
-        <div
-          className={cn(
-            'flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-[11px] font-bold text-white',
-            colorClass
-          )}
-        >
-          {initials}
-        </div>
+        <CompanyLogo job={job} />
 
         {/* Job info */}
         <div className="min-w-0 flex-1">

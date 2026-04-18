@@ -10,6 +10,7 @@ import type { Job } from '@/lib/mock-data'
 interface JobFeedProps {
   jobs: Job[]
   total: number
+  loading?: boolean
   onToggleSidebar: () => void
 }
 
@@ -37,7 +38,23 @@ const ONBOARDING_STEPS = [
   },
 ]
 
-export default function JobFeed({ jobs, total, onToggleSidebar }: JobFeedProps) {
+function SkeletonRow() {
+  return (
+    <div
+      className="flex items-center gap-3 border-b px-4 py-3"
+      style={{ borderColor: 'var(--d-border)' }}
+    >
+      <div className="h-9 w-9 flex-shrink-0 animate-pulse rounded-lg" style={{ background: 'var(--d-border)' }} />
+      <div className="flex flex-1 flex-col gap-1.5">
+        <div className="h-3 w-48 animate-pulse rounded" style={{ background: 'var(--d-border)' }} />
+        <div className="h-2.5 w-32 animate-pulse rounded" style={{ background: 'var(--d-border)' }} />
+      </div>
+      <div className="hidden h-2.5 w-16 animate-pulse rounded sm:block" style={{ background: 'var(--d-border)' }} />
+    </div>
+  )
+}
+
+export default function JobFeed({ jobs, total, loading = false, onToggleSidebar }: JobFeedProps) {
   const [activeTab, setActiveTab] = useState<'vagas' | 'ignoradas'>('vagas')
   const [lastScanMin] = useState(3)
   const { openAuthModal } = useAuthModal()
@@ -96,15 +113,19 @@ export default function JobFeed({ jobs, total, onToggleSidebar }: JobFeedProps) 
         </div>
 
         {/* Match counter */}
-        <span className="font-mono-dm text-[11px]" style={{ color: 'var(--d-text-2)' }}>
-          <span className="font-semibold" style={{ color: 'var(--d-accent)' }}>
-            {jobs.length}
+        {loading ? (
+          <div className="h-2.5 w-24 animate-pulse rounded" style={{ background: 'var(--d-border)' }} />
+        ) : (
+          <span className="font-mono-dm text-[11px]" style={{ color: 'var(--d-text-2)' }}>
+            <span className="font-semibold" style={{ color: 'var(--d-accent)' }}>
+              {jobs.length}
+            </span>
+            {jobs.length !== total && (
+              <span style={{ color: 'var(--d-muted)' }}> de {total}</span>
+            )}{' '}
+            vagas com match
           </span>
-          {jobs.length !== total && (
-            <span style={{ color: 'var(--d-muted)' }}> de {total}</span>
-          )}{' '}
-          vagas com match
-        </span>
+        )}
       </div>
 
       {/* Tabs */}
@@ -217,15 +238,21 @@ export default function JobFeed({ jobs, total, onToggleSidebar }: JobFeedProps) 
         {/* Job rows */}
         {activeTab === 'vagas' && (
           <div>
-            {jobs.map((job) => (
-              <JobRow key={job.id} job={job} />
-            ))}
-            {jobs.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-16">
-                <p className="text-sm" style={{ color: 'var(--d-muted)' }}>
-                  Nenhuma vaga encontrada com esses filtros.
-                </p>
-              </div>
+            {loading ? (
+              Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)
+            ) : (
+              <>
+                {jobs.map((job) => (
+                  <JobRow key={job.id} job={job} />
+                ))}
+                {jobs.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-16">
+                    <p className="text-sm" style={{ color: 'var(--d-muted)' }}>
+                      Nenhuma vaga encontrada com esses filtros.
+                    </p>
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
