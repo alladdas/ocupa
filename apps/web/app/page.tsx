@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import DashNav from '@/components/DashNav'
 import FilterSidebar from '@/components/FilterSidebar'
 import JobFeed from '@/components/JobFeed'
@@ -20,20 +20,34 @@ export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [allJobs, setAllJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
+  const [offset, setOffset] = useState(0)
 
-  useEffect(() => {
-    fetch('/api/jobs')
+  const PAGE_SIZE = 50
+
+  const fetchJobs = useCallback((off: number, append: boolean) => {
+    if (append) setLoadingMore(true)
+    else setLoading(true)
+
+    fetch(`/api/jobs?offset=${off}`)
       .then((r) => r.json())
       .then((data: unknown) => {
         if (Array.isArray(data)) {
-          setAllJobs(
-            (data as Job[]).map((j) => ({ ...j, detectedAt: new Date(j.detectedAt) }))
-          )
+          const jobs = (data as Job[]).map((j) => ({ ...j, detectedAt: new Date(j.detectedAt) }))
+          setAllJobs((prev) => append ? [...prev, ...jobs] : jobs)
+          setHasMore(jobs.length === PAGE_SIZE)
+          setOffset(off + jobs.length)
         }
       })
       .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
+      .finally(() => {
+        if (append) setLoadingMore(false)
+        else setLoading(false)
+      })
+  }, [PAGE_SIZE])
+
+  useEffect(() => { fetchJobs(0, false) }, [fetchJobs])
 
   const filteredJobs = useMemo(() => {
     return allJobs.filter((job) => {
@@ -72,6 +86,9 @@ export default function DashboardPage() {
           jobs={filteredJobs}
           total={allJobs.length}
           loading={loading}
+          loadingMore={loadingMore}
+          hasMore={hasMore}
+          onLoadMore={() => fetchJobs(offset, true)}
           onToggleSidebar={() => setSidebarOpen((v) => !v)}
         />
       </div>

@@ -11,6 +11,9 @@ interface JobFeedProps {
   jobs: Job[]
   total: number
   loading?: boolean
+  loadingMore?: boolean
+  hasMore?: boolean
+  onLoadMore?: () => void
   onToggleSidebar: () => void
 }
 
@@ -54,7 +57,7 @@ function SkeletonRow() {
   )
 }
 
-export default function JobFeed({ jobs, total, loading = false, onToggleSidebar }: JobFeedProps) {
+export default function JobFeed({ jobs, total, loading = false, loadingMore = false, hasMore = false, onLoadMore, onToggleSidebar }: JobFeedProps) {
   const [activeTab, setActiveTab] = useState<'vagas' | 'ignoradas'>('vagas')
   const [lastScanMin] = useState(3)
   const { openAuthModal } = useAuthModal()
@@ -252,6 +255,24 @@ export default function JobFeed({ jobs, total, loading = false, onToggleSidebar 
                     </p>
                   </div>
                 )}
+                {/* Load more */}
+                {hasMore && jobs.length > 0 && (
+                  <div className="flex justify-center px-4 py-6">
+                    <button
+                      onClick={onLoadMore}
+                      disabled={loadingMore}
+                      className="font-mono-dm rounded-lg px-6 py-2.5 text-xs font-semibold transition-all disabled:opacity-50"
+                      style={{
+                        background: 'var(--d-accent-subtle)',
+                        color: 'var(--d-accent-text)',
+                        border: '1px solid var(--d-accent-border)',
+                      }}
+                    >
+                      {loadingMore ? 'Carregando…' : 'Carregar mais vagas'}
+                    </button>
+                  </div>
+                )}
+                {loadingMore && Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={`more-${i}`} />)}
               </>
             )}
           </div>

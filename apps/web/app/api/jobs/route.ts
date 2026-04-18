@@ -25,7 +25,7 @@ const DOMAIN_MAP: Record<string, string> = {
   alice: 'alice.com.br',
   dock: 'dock.tech',
   unico: 'unico.io',
-  ciandt: 'ciandt.com',
+  ciandt: 'ci.com.br',
   // Mock data compat
   ifood: 'ifood.com.br',
   mercadolivre: 'mercadolivre.com.br',
@@ -103,14 +103,22 @@ const NAME_MAP: Record<string, string> = {
 
 function inferArea(title: string): Area {
   const t = title.toLowerCase()
-  if (/data|dados|analytic|scientist|bi\b|machine learning|\bml\b|engenharia de dados/.test(t)) return 'Dados'
-  if (/product manager|produto|product owner|\bpm\b/.test(t)) return 'Produto'
-  if (/design|ux|ui\b|designer|figma/.test(t)) return 'Design'
-  if (/marketing|seo|cro|mídia|ads|email mkt/.test(t)) return 'Marketing'
-  if (/growth|acquisition|crm/.test(t)) return 'Growth'
-  if (/financ|contab|tesour|controladoria|fiscal/.test(t)) return 'Financeiro'
-  if (/oper|logist|supply|estoque|fulfillment/.test(t)) return 'Operações'
+  if (/\bdata\b|dados|analytic|scientist|\bbi\b|machine learning|\bml\b|engenharia de dados/.test(t)) return 'Dados'
+  if (/product manager|produto|\bpm\b|\bpo\b|product owner/.test(t)) return 'Produto'
+  if (/design|\bux\b|\bui\b|designer|figma|visual|criativo/.test(t)) return 'Design'
+  if (/marketing|comunicação|mídia|conteúdo|social media|\bseo\b|copywriter|branding/.test(t)) return 'Marketing'
+  if (/growth|\bcrm\b|performance|aquisição|retenção|acquisition/.test(t)) return 'Growth'
+  if (/financ|contab|tesour|controladoria|fiscal|finance|\bfp&a\b|analista financeiro/.test(t)) return 'Financeiro'
+  if (/oper|logist|supply|estoque|fulfillment|atendente|assistente de loja|expedição|almoxarife|abastecimento/.test(t)) return 'Operações'
   return 'Tecnologia'
+}
+
+function inferWorkModel(employmentType: string, location: string): WorkModel {
+  const loc = location.toLowerCase()
+  const emp = employmentType.toLowerCase()
+  if (loc.includes('remot') || emp.includes('remot')) return 'remoto'
+  if (loc.includes('híbrid') || loc.includes('hybrid') || emp.includes('híbrid') || emp.includes('hybrid')) return 'híbrido'
+  return 'presencial'
 }
 
 function inferSeniority(title: string): Seniority {
@@ -124,14 +132,19 @@ function inferSeniority(title: string): Seniority {
 function formatSalary(min: number | null, max: number | null): string | null {
   if (!min && !max) return null
   const fmt = (v: number) => `R$ ${(v / 1000).toFixed(0)}k`
-  if (min && max) return `${fmt(min)} – ${fmt(max)}`
+  if (min && max) return `${fmt(min)} - ${fmt(max)}`
   if (min) return `a partir de ${fmt(min)}`
   return `até ${fmt(max!)}`
 }
 
 // ─── Route ────────────────────────────────────────────────────────────────────
 
-export async function GET() {
+const PAGE_SIZE = 50
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url)
+  const offset = Math.max(0, parseInt(searchParams.get('offset') ?? '0', 10))
+
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -141,7 +154,7 @@ export async function GET() {
     .from('scraped_jobs')
     .select('*')
     .order('posted_at', { ascending: false })
-    .limit(50)
+    .range(offset, offset + PAGE_SIZE - 1)
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
@@ -158,14 +171,14 @@ export async function GET() {
       companySlug: slug,
       logoUrl: domain ? `https://logo.clearbit.com/${domain}` : null,
       location: row.location ?? '',
-      workModel: (row.employment_type ?? 'presencial') as WorkModel,
+      workModel: inferWorkModel(row.employment_type ?? '', row.location ?? ''),
       seniority: inferSeniority(row.title ?? ''),
       area: inferArea(row.title ?? ''),
       salary: formatSalary(row.salary_min ?? null, row.salary_max ?? null),
       detectedAt: new Date(row.posted_at ?? row.created_at),
       isOnLinkedin: false,
       applyUrl: row.url ?? '#',
-      description: '',
+      description: (row.description as string | null) ?? '',
       tags: [],
     }
   })
