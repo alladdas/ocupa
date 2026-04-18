@@ -87,7 +87,7 @@ export default function DashboardPage() {
   const hideJob = useCallback((job: Job) => {
     hiddenIdsRef.current.add(job.id)
     try {
-      localStorage.setItem('hidden_jobs', JSON.stringify([...hiddenIdsRef.current]))
+      localStorage.setItem('hidden_jobs', JSON.stringify(Array.from(hiddenIdsRef.current)))
     } catch { /* storage unavailable */ }
     setJobs((prev) => prev.filter((j) => j.id !== job.id))
     setHiddenJobs((prev) => [job, ...prev])
@@ -96,7 +96,7 @@ export default function DashboardPage() {
   const unhideJob = useCallback((jobId: string) => {
     hiddenIdsRef.current.delete(jobId)
     try {
-      localStorage.setItem('hidden_jobs', JSON.stringify([...hiddenIdsRef.current]))
+      localStorage.setItem('hidden_jobs', JSON.stringify(Array.from(hiddenIdsRef.current)))
     } catch { /* storage unavailable */ }
     setHiddenJobs((prev) => prev.filter((j) => j.id !== jobId))
   }, [])
