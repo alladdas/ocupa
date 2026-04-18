@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { SlidersHorizontal, CheckCircle, FileText, Bell, Bot, ArrowRight } from 'lucide-react'
+import { SlidersHorizontal, CheckCircle, FileText, Bell, Bot, ArrowRight, RotateCcw } from 'lucide-react'
 import JobRow from '@/components/JobRow'
 import { useAuthModal } from '@/components/AuthModalContext'
 import { useUser } from '@/components/UserContext'
@@ -13,7 +13,10 @@ interface JobFeedProps {
   loading?: boolean
   loadingMore?: boolean
   hasMore?: boolean
+  hiddenJobs?: Job[]
   onLoadMore?: () => void
+  onHide?: (job: Job) => void
+  onUnhide?: (id: string) => void
   onToggleSidebar: () => void
 }
 
@@ -57,7 +60,7 @@ function SkeletonRow() {
   )
 }
 
-export default function JobFeed({ jobs, total, loading = false, loadingMore = false, hasMore = false, onLoadMore, onToggleSidebar }: JobFeedProps) {
+export default function JobFeed({ jobs, total, loading = false, loadingMore = false, hasMore = false, hiddenJobs = [], onLoadMore, onHide, onUnhide, onToggleSidebar }: JobFeedProps) {
   const [activeTab, setActiveTab] = useState<'vagas' | 'ignoradas'>('vagas')
   const [lastScanMin] = useState(3)
   const { openAuthModal } = useAuthModal()
@@ -138,7 +141,7 @@ export default function JobFeed({ jobs, total, loading = false, loadingMore = fa
       >
         {[
           { id: 'vagas', label: 'Vagas' },
-          { id: 'ignoradas', label: 'Não tenho interesse' },
+          { id: 'ignoradas', label: hiddenJobs.length > 0 ? `Não tenho interesse (${hiddenJobs.length})` : 'Não tenho interesse' },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -246,7 +249,7 @@ export default function JobFeed({ jobs, total, loading = false, loadingMore = fa
             ) : (
               <>
                 {jobs.map((job) => (
-                  <JobRow key={job.id} job={job} />
+                  <JobRow key={job.id} job={job} onHide={onHide} />
                 ))}
                 {jobs.length === 0 && (
                   <div className="flex flex-col items-center justify-center py-16">
@@ -279,10 +282,40 @@ export default function JobFeed({ jobs, total, loading = false, loadingMore = fa
         )}
 
         {activeTab === 'ignoradas' && (
-          <div className="flex flex-col items-center justify-center py-16">
-            <p className="text-sm" style={{ color: 'var(--d-muted)' }}>
-              Nenhuma vaga ignorada ainda.
-            </p>
+          <div>
+            {hiddenJobs.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16">
+                <p className="text-sm" style={{ color: 'var(--d-muted)' }}>
+                  Nenhuma vaga ignorada ainda.
+                </p>
+              </div>
+            ) : (
+              hiddenJobs.map((job) => (
+                <div
+                  key={job.id}
+                  className="flex items-center gap-3 border-b px-4 py-3 opacity-60"
+                  style={{ borderColor: 'var(--d-border)' }}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium" style={{ color: 'var(--d-text)' }}>
+                      {job.title}
+                    </p>
+                    <p className="font-mono-dm mt-0.5 text-[11px]" style={{ color: 'var(--d-muted)' }}>
+                      {job.company} · {job.location}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => onUnhide?.(job.id)}
+                    className="flex flex-shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                    style={{ color: 'var(--d-accent)' }}
+                    title="Desfazer"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    Desfazer
+                  </button>
+                </div>
+              ))
+            )}
           </div>
         )}
       </div>

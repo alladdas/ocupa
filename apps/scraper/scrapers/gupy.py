@@ -111,6 +111,7 @@ def scrape_gupy() -> int:
                     'salary_min': None,
                     'salary_max': None,
                     'posted_at': job.get('publishedDate') or job.get('applicationDeadline'),
+                    'description': job.get('description') or '',
                     'source': 'gupy',
                     'tier': 'free',
                 }

@@ -22,7 +22,7 @@ export function formatSalary(salary: string | null): string {
   return salary ?? 'A combinar'
 }
 
-export const COMPANY_COLORS: Record<string, string> = {
+const BRAND_COLORS: Record<string, string> = {
   nubank: 'bg-purple-600',
   ifood: 'bg-red-600',
   stone: 'bg-green-600',
@@ -35,15 +35,32 @@ export const COMPANY_COLORS: Record<string, string> = {
   vtex: 'bg-pink-600',
   hotmart: 'bg-red-500',
   loft: 'bg-indigo-600',
-  'rd station': 'bg-blue-500',
   gympass: 'bg-cyan-600',
   btgpactual: 'bg-blue-700',
   bradesco: 'bg-red-700',
-  default: 'bg-zinc-700',
+  neon: 'bg-lime-500',
+  ambev: 'bg-amber-600',
+  cloudwalk: 'bg-indigo-500',
+  dock: 'bg-sky-600',
+  alice: 'bg-rose-500',
+  flash: 'bg-orange-600',
+}
+
+const HASH_PALETTE = [
+  'bg-red-600', 'bg-orange-600', 'bg-amber-600', 'bg-yellow-600',
+  'bg-lime-600', 'bg-green-600', 'bg-emerald-600', 'bg-teal-600',
+  'bg-cyan-600', 'bg-sky-600', 'bg-blue-600', 'bg-indigo-600',
+  'bg-violet-600', 'bg-purple-600', 'bg-fuchsia-600', 'bg-pink-600',
+]
+
+function hashSlug(slug: string): string {
+  let h = 0
+  for (let i = 0; i < slug.length; i++) h = (Math.imul(31, h) + slug.charCodeAt(i)) | 0
+  return HASH_PALETTE[Math.abs(h) % HASH_PALETTE.length]
 }
 
 export function getCompanyColor(slug: string): string {
-  return COMPANY_COLORS[slug] ?? COMPANY_COLORS.default
+  return BRAND_COLORS[slug] ?? hashSlug(slug)
 }
 
 export function getCompanyInitials(name: string): string {

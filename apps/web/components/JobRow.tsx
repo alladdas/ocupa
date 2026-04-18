@@ -11,6 +11,7 @@ import type { Job } from '@/lib/mock-data'
 
 interface JobRowProps {
   job: Job
+  onHide?: (job: Job) => void
 }
 
 function CompanyLogo({ job }: { job: Job }) {
@@ -75,7 +76,7 @@ function sanitizeHtml(html: string): string {
     .replace(/\bon\w+\s*=/gi, 'data-removed=')
 }
 
-export default function JobRow({ job }: JobRowProps) {
+export default function JobRow({ job, onHide }: JobRowProps) {
   const [expanded, setExpanded] = useState(false)
   const { openAuthModal } = useAuthModal()
   const { openUpgradeModal } = useUpgradeModal()
@@ -131,12 +132,15 @@ export default function JobRow({ job }: JobRowProps) {
             <span>{job.company}</span>
             <span style={{ color: 'var(--d-muted)' }}>·</span>
             <span>{job.location}</span>
-            <span
-              className="rounded px-1.5 py-0.5"
-              style={{ background: 'var(--d-tag-bg)', color: 'var(--d-text-2)' }}
-            >
-              {job.workModel}
-            </span>
+            {/* Only show workModel pill when not already shown as a badge */}
+            {job.workModel !== 'remoto' && (
+              <span
+                className="rounded px-1.5 py-0.5"
+                style={{ background: 'var(--d-tag-bg)', color: 'var(--d-text-2)' }}
+              >
+                {job.workModel}
+              </span>
+            )}
             {job.salary && (
               <>
                 <span style={{ color: 'var(--d-muted)' }}>·</span>
@@ -157,6 +161,7 @@ export default function JobRow({ job }: JobRowProps) {
             className="rounded-md p-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
             style={{ color: 'var(--d-muted)' }}
             title="Não tenho interesse"
+            onClick={() => onHide?.(job)}
           >
             <EyeOff className="h-3.5 w-3.5" />
           </button>

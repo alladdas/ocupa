@@ -137,24 +137,77 @@ function formatSalary(min: number | null, max: number | null): string | null {
   return `até ${fmt(max!)}`
 }
 
+// ─── Filter keyword maps (title-based inference for Supabase ilike) ──────────
+
+const AREA_PATTERNS: Record<Area, string[]> = {
+  'Tecnologia': ['engineer', 'developer', 'software', 'backend', 'frontend', 'fullstack', 'mobile', 'devops', 'segurança', 'sistemas'],
+  'Dados':      ['analytic', 'scientist', 'machine learning', 'engenharia de dados', ' dados', ' data '],
+  'Produto':    ['product manager', 'product owner', 'product', 'produto'],
+  'Design':     ['designer', 'figma', 'design'],
+  'Marketing':  ['marketing', 'comunicação', 'mídia', 'social media', 'copywriter', 'branding'],
+  'Growth':     ['growth', 'performance', 'aquisição', 'retenção'],
+  'Financeiro': ['financeiro', 'contabilidade', 'tesouraria', 'controladoria', 'analista financeiro', 'fp&a'],
+  'Operações':  ['logística', 'supply chain', 'estoque', 'atendente', 'expedição', 'almoxarife'],
+}
+
+const SENIORITY_PATTERNS: Record<Seniority, string[]> = {
+  'Júnior': ['júnior', 'junior', ' jr '],
+  'Pleno':  ['pleno'],
+  'Sênior': ['sênior', 'senior', ' sr '],
+  'Lead':   ['lead', 'staff', 'principal', 'head', 'diretor', 'director', 'manager'],
+}
+
 // ─── Route ────────────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 50
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
-  const offset = Math.max(0, parseInt(searchParams.get('offset') ?? '0', 10))
+  const offset      = Math.max(0, parseInt(searchParams.get('offset') ?? '0', 10))
+  const search      = searchParams.get('search')?.trim() ?? ''
+  const areas       = searchParams.getAll('area') as Area[]
+  const seniorities = searchParams.getAll('seniority') as Seniority[]
+  const workModels  = searchParams.getAll('workModel')
+  const location    = searchParams.get('location')?.trim() ?? ''
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   )
 
-  const { data, error } = await supabase
-    .from('scraped_jobs')
-    .select('*')
-    .order('posted_at', { ascending: false })
-    .range(offset, offset + PAGE_SIZE - 1)
+  // eslint-disable-next-line prefer-const
+  let query = supabase.from('scraped_jobs').select('*').order('posted_at', { ascending: false })
+
+  if (search) {
+    // Search across title and company
+    query = query.or(`title.ilike.%${search}%,company.ilike.%${search}%`) as typeof query
+  }
+
+  if (workModels.length > 0) {
+    query = query.in('employment_type', workModels) as typeof query
+  }
+
+  if (location) {
+    query = query.ilike('location', `%${location}%`) as typeof query
+  }
+
+  if (areas.length > 0) {
+    const patterns = areas.flatMap((a) => AREA_PATTERNS[a] ?? [])
+    if (patterns.length > 0) {
+      const clause = patterns.map((p) => `title.ilike.%${p}%`).join(',')
+      query = query.or(clause) as typeof query
+    }
+  }
+
+  if (seniorities.length > 0) {
+    const patterns = seniorities.flatMap((s) => SENIORITY_PATTERNS[s] ?? [])
+    if (patterns.length > 0) {
+      const clause = patterns.map((p) => `title.ilike.%${p}%`).join(',')
+      query = query.or(clause) as typeof query
+    }
+  }
+
+  const { data, error } = await query.range(offset, offset + PAGE_SIZE - 1)
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
@@ -169,7 +222,7 @@ export async function GET(request: Request) {
       title: row.title ?? '',
       company: NAME_MAP[slug] ?? row.company ?? slug,
       companySlug: slug,
-      logoUrl: domain ? `https://logo.clearbit.com/${domain}` : null,
+      logoUrl: domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=64` : null,
       location: row.location ?? '',
       workModel: inferWorkModel(row.employment_type ?? '', row.location ?? ''),
       seniority: inferSeniority(row.title ?? ''),

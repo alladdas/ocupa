@@ -69,6 +69,7 @@ def scrape_greenhouse() -> int:
                     'salary_min': None,
                     'salary_max': None,
                     'posted_at': job.get('updated_at'),
+                    'description': job.get('content') or '',
                     'source': 'greenhouse',
                     'tier': 'free',
                 }
