@@ -11,6 +11,8 @@ logger = logging.getLogger(__name__)
 COMPANIES = [
     'nubank', 'wildlifestudios', 'cloudwalk', 'neon', 'caju',
     'flash', 'alice', 'dock', 'unico', 'ciandt',
+    # Confirmed working via boards-api.greenhouse.io (HTTP 200)
+    'xpinc', 'c6bank', 'picpay', 'quintoandar', 'vtex', 'inter',
 ]
 
 

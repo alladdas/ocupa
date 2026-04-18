@@ -22,17 +22,12 @@ ALTERLAB_URL = 'https://api.alterlab.io/api/v1/scrape'
 # slug → { url, type }
 # type drives which parser is attempted first
 COMPANIES: dict[str, dict] = {
-    'ifood':       {'url': 'https://carreiras.ifood.com.br',             'type': 'custom'},
-    'stone':       {'url': 'https://jobs.lever.co/stone',                'type': 'lever'},
-    'xpinc':       {'url': 'https://boards.greenhouse.io/xpinc',         'type': 'greenhouse'},
-    'c6bank':      {'url': 'https://boards.greenhouse.io/c6bank',        'type': 'greenhouse'},
-    'picpay':      {'url': 'https://boards.greenhouse.io/picpay',        'type': 'greenhouse'},
-    'creditas':    {'url': 'https://boards.greenhouse.io/creditas',      'type': 'greenhouse'},
-    'quintoandar': {'url': 'https://boards.greenhouse.io/quintoandar',   'type': 'greenhouse'},
-    'hotmart':     {'url': 'https://boards.greenhouse.io/hotmart',       'type': 'greenhouse'},
-    'vtex':        {'url': 'https://boards.greenhouse.io/vtex',          'type': 'greenhouse'},
-    'loggi':       {'url': 'https://boards.greenhouse.io/loggi',         'type': 'greenhouse'},
-    'inter':       {'url': 'https://carreiras.inter.co/carreiras/',      'type': 'custom'},
+    # All are SPAs with no public API — require JS rendering
+    'ifood':    {'url': 'https://carreiras.ifood.com.br',        'type': 'custom',     'render_js': True},
+    'stone':    {'url': 'https://jobs.lever.co/stone',           'type': 'lever',      'render_js': True},
+    'creditas': {'url': 'https://boards.greenhouse.io/creditas', 'type': 'greenhouse', 'render_js': True},
+    'hotmart':  {'url': 'https://boards.greenhouse.io/hotmart',  'type': 'greenhouse', 'render_js': True},
+    'loggi':    {'url': 'https://boards.greenhouse.io/loggi',    'type': 'greenhouse', 'render_js': True},
 }
 
 
@@ -49,7 +44,7 @@ def _work_model(text: str) -> str:
 
 # ─── AlterLab request ─────────────────────────────────────────────────────────
 
-def _scrape(url: str) -> dict | None:
+def _scrape(url: str, render_js: bool = False) -> dict | None:
     api_key = os.environ.get('ALTERLAB_API_KEY', '')
     if not api_key:
         logger.error('ALTERLAB_API_KEY not set — skipping alterlab scraper')
@@ -61,10 +56,11 @@ def _scrape(url: str) -> dict | None:
             headers={'X-API-Key': api_key, 'Content-Type': 'application/json'},
             json={
                 'url': url,
+                'render_js': render_js,
                 'cost_controls': {'prefer_cost': True, 'max_tier': '3'},
                 'formats': ['json', 'text'],
             },
-            timeout=90,
+            timeout=120,
         )
         if resp.status_code != 200:
             logger.warning(f'AlterLab → {url} HTTP {resp.status_code}: {resp.text[:300]}')
@@ -303,8 +299,9 @@ def scrape_alterlab() -> int:
         url = config['url']
         company_type = config['type']
 
-        logger.debug(f'[alterlab] Scraping {slug} ({url})')
-        response = _scrape(url)
+        render_js = config.get('render_js', False)
+        logger.debug(f'[alterlab] Scraping {slug} ({url}) render_js={render_js}')
+        response = _scrape(url, render_js=render_js)
         if response is None:
             logger.warning(f'[alterlab] No response for {slug} — skipping')
             continue
