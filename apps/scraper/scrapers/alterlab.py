@@ -25,9 +25,9 @@ COMPANIES: dict[str, dict] = {
     # All are SPAs with no public API — require JS rendering
     'ifood':    {'url': 'https://carreiras.ifood.com.br', 'type': 'custom', 'render_js': True},
     # stone moved to greenhouse.py (boards-api.greenhouse.io/v1/boards/stone → 459 jobs)
-    'creditas': {'url': 'https://creditas.gupy.io',       'type': 'custom', 'render_js': True},
+    # loggi removed — no open positions
+    'creditas': {'url': 'https://creditas.gupy.io',       'type': 'gupy_board', 'render_js': True},
     'hotmart':  {'url': 'https://hotmart.com/en/jobs',    'type': 'custom', 'render_js': True},
-    'loggi':    {'url': 'https://loggi.gupy.io',          'type': 'custom', 'render_js': True},
 }
 
 
@@ -210,6 +210,70 @@ def _parse_ifood_text(text: str) -> list[dict]:
     return jobs
 
 
+def _parse_gupy_board_json(payload: dict | list, slug: str) -> list[dict]:
+    """
+    Parses AlterLab's CollectionPage JSON from a Gupy board (e.g. creditas.gupy.io).
+    Items have titles like "Job Title Location and Hybrid Full-time employee" and
+    URLs like "https://{slug}.gupy.io/jobs/{id}?jobBoardSource=gupy_public_page".
+    """
+    items = payload.get('items', []) if isinstance(payload, dict) else (payload if isinstance(payload, list) else [])
+    if not items:
+        return []
+
+    job_url_re = re.compile(r'/jobs/(\d+)')
+    suffix_re = re.compile(r'\s+and\s+(?:Hybrid|Remote|On-site|On site|Presential)\b.*$', re.IGNORECASE)
+    # Greedy match from right: find last " - STATE" (2 uppercase letters at end)
+    state_re = re.compile(r'^(.+)\s+-\s+([A-Z]{2})\s*$')
+
+    jobs = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        url = item.get('url', '')
+        m = job_url_re.search(url)
+        if not m:
+            continue  # skip navigation links (Terms of Use, Privacy Notice, etc.)
+
+        job_id = m.group(1)
+        raw_title = (item.get('title') or '').strip()
+
+        # Strip " and Hybrid Full-time employee" from end
+        title_loc = suffix_re.sub('', raw_title).strip()
+
+        state_m = state_re.match(title_loc)
+        if state_m:
+            pre_state = state_m.group(1)  # e.g. "Analista de Business Analytics Pleno São Paulo"
+            state = state_m.group(2)      # e.g. "SP"
+            # rsplit into at most 3 parts to peel off last 2 words as city
+            parts = pre_state.rsplit(None, 2)
+            if len(parts) == 3 and parts[1][0].isupper():
+                title = parts[0].rstrip('|').strip()
+                location = f'{parts[1]} {parts[2]} - {state}'
+            else:
+                title = ' '.join(parts[:-1]).rstrip('|').strip() if len(parts) > 1 else title_loc
+                location = f'{parts[-1]} - {state}' if parts else ''
+        else:
+            title = title_loc
+            location = ''
+
+        jobs.append({
+            'id': f'alterlab-{slug}-{job_id}',
+            'title': title,
+            'company': slug,
+            'location': location,
+            'url': url.split('?')[0],
+            'employment_type': _work_model(raw_title),
+            'salary_min': None,
+            'salary_max': None,
+            'posted_at': None,
+            'description': '',
+            'source': 'alterlab',
+            'tier': 'free',
+        })
+
+    return jobs
+
+
 def _parse_text_fallback(text: str, source_url: str, slug: str) -> list[dict]:
     """
     Last-resort text parser: looks for lines that look like job titles
@@ -316,6 +380,11 @@ def _extract_jobs(slug: str, company_type: str, source_url: str, response: dict)
         elif company_type == 'lever':
             jobs = _parse_lever(payload, slug)
             if jobs:
+                return jobs
+        elif company_type == 'gupy_board':
+            jobs = _parse_gupy_board_json(payload, slug)
+            if jobs:
+                logger.debug(f'[alterlab] {slug} gupy_board parser → {len(jobs)} vagas')
                 return jobs
 
     # 2. Generic JSON walker
