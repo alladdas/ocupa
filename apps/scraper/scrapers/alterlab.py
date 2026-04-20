@@ -23,11 +23,11 @@ ALTERLAB_URL = 'https://api.alterlab.io/api/v1/scrape'
 # type drives which parser is attempted first
 COMPANIES: dict[str, dict] = {
     # All are SPAs with no public API — require JS rendering
-    'ifood':    {'url': 'https://carreiras.ifood.com.br',        'type': 'custom',     'render_js': True},
-    'stone':    {'url': 'https://jobs.lever.co/stone',           'type': 'lever',      'render_js': True},
-    'creditas': {'url': 'https://boards.greenhouse.io/creditas', 'type': 'greenhouse', 'render_js': True},
-    'hotmart':  {'url': 'https://boards.greenhouse.io/hotmart',  'type': 'greenhouse', 'render_js': True},
-    'loggi':    {'url': 'https://boards.greenhouse.io/loggi',    'type': 'greenhouse', 'render_js': True},
+    'ifood':    {'url': 'https://carreiras.ifood.com.br', 'type': 'custom', 'render_js': True},
+    # stone moved to greenhouse.py (boards-api.greenhouse.io/v1/boards/stone → 459 jobs)
+    'creditas': {'url': 'https://creditas.gupy.io',       'type': 'custom', 'render_js': True},
+    'hotmart':  {'url': 'https://hotmart.com/en/jobs',    'type': 'custom', 'render_js': True},
+    'loggi':    {'url': 'https://loggi.gupy.io',          'type': 'custom', 'render_js': True},
 }
 
 
@@ -165,6 +165,51 @@ def _parse_lever(payload: dict | list, slug: str) -> list[dict]:
     return jobs
 
 
+def _parse_ifood_text(text: str) -> list[dict]:
+    # Remove header e lixo inicial
+    text = re.sub(r'^.*?VAGASENIORIDADELOCAL', '', text, flags=re.DOTALL)
+
+    # Regex: captura (titulo)(senioridade)(localização)
+    pattern = re.compile(
+        r'(.+?)(Júnior|Pleno|Sênior|Estágio|Especialista|Executivo[^\s]*)'
+        r'(.*?)(?=.+?(?:Júnior|Pleno|Sênior|Estágio|Especialista|Executivo)|$)',
+        re.DOTALL
+    )
+
+    jobs = []
+    for match in pattern.finditer(text):
+        title = match.group(1).strip()
+        seniority = match.group(2).strip()
+        location_raw = match.group(3).strip()
+
+        loc_match = re.search(
+            r'(.+?(?:Brazil|Brasil|Remoto|Remote))',
+            location_raw
+        )
+        location = loc_match.group(1).strip() if loc_match else location_raw[:50]
+
+        if len(title) < 5:
+            continue
+
+        job_id = f'alterlab-ifood-{abs(hash(title + seniority))}'
+        jobs.append({
+            'id': job_id,
+            'title': title,
+            'company': 'ifood',
+            'location': location,
+            'url': 'https://carreiras.ifood.com.br',
+            'employment_type': _work_model(location),
+            'salary_min': None,
+            'salary_max': None,
+            'posted_at': None,
+            'description': '',
+            'source': 'alterlab',
+            'tier': 'free',
+        })
+
+    return jobs
+
+
 def _parse_text_fallback(text: str, source_url: str, slug: str) -> list[dict]:
     """
     Last-resort text parser: looks for lines that look like job titles
@@ -254,6 +299,13 @@ def _parse_generic_json(payload: dict | list, source_url: str, slug: str) -> lis
 
 def _extract_jobs(slug: str, company_type: str, source_url: str, response: dict) -> list[dict]:
     payload, text = _extract_payload(response)
+
+    # iFood has a known text format — try it first before generic parsers
+    if slug == 'ifood' and text:
+        jobs = _parse_ifood_text(text)
+        if jobs:
+            logger.debug(f'[alterlab] ifood text parser → {len(jobs)} vagas')
+            return jobs
 
     # 1. Try the typed parser first
     if payload is not None:
