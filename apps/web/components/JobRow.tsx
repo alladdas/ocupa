@@ -82,7 +82,12 @@ export default function JobRow({ job, onHide }: JobRowProps) {
   const { openUpgradeModal } = useUpgradeModal()
   const { user } = useUser()
 
-  const handleApply = user ? openUpgradeModal : openAuthModal
+  // Not logged in → auth modal | logged in, not Pro → upgrade modal | Pro → open job
+  const handleApply = !user
+    ? openAuthModal
+    : user.isPro
+      ? () => window.open(job.applyUrl, '_blank', 'noopener,noreferrer')
+      : openUpgradeModal
   const badges = getContextBadges(job)
 
   return (

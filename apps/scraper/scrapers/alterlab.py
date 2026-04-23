@@ -42,6 +42,42 @@ def _work_model(text: str) -> str:
     return 'presencial'
 
 
+# ─── Title quality helpers ────────────────────────────────────────────────────
+
+# Substrings (lowercase) that identify nav/UI noise, not job titles
+_TITLE_BLACKLIST = (
+    'skip to main',
+    "gupy's terms",
+    "gupy's privacy",
+    'terms of use',
+    'privacy notice',
+    'cookie',
+    'feedback badge',
+    'join our talent pool',
+    'join the talent pool',
+)
+
+# Strips city/state/contract suffix from Gupy-style titles
+# e.g. "Engineering Lead | Plataforma São Paulo - SP and Hybrid…" → "Engineering Lead | Plataforma"
+_CITY_SUFFIX_RE = re.compile(
+    r'\s+(São Paulo|Rio de Janeiro|Belo Horizonte|Brasília|Curitiba|'
+    r'Brasil|Brazil|Remote|Remoto)[\s\-–|].*$',
+    re.IGNORECASE,
+)
+
+# Strips city/state prefix stuck to iFood titles
+# e.g. "Osasco, Analista de Dados" → "Analista de Dados"
+_IFOOD_PREFIX_RE = re.compile(
+    r'^(Osasco|São Paulo|Rio de Janeiro|Brasil|Brazil|Remoto|Remote|Híbrido)[,\s]+',
+    re.IGNORECASE,
+)
+
+
+def _is_invalid_title(title: str) -> bool:
+    t = (title or '').lower()
+    return any(bl in t for bl in _TITLE_BLACKLIST)
+
+
 # ─── AlterLab request ─────────────────────────────────────────────────────────
 
 def _scrape(url: str, render_js: bool = False) -> dict | None:
@@ -188,6 +224,9 @@ def _parse_ifood_text(text: str) -> list[dict]:
         )
         location = loc_match.group(1).strip() if loc_match else location_raw[:50]
 
+        # Strip city/state prefix that sometimes gets concatenated to the title
+        title = _IFOOD_PREFIX_RE.sub('', title).strip()
+
         if len(title) < 5:
             continue
 
@@ -255,6 +294,9 @@ def _parse_gupy_board_json(payload: dict | list, slug: str) -> list[dict]:
         else:
             title = title_loc
             location = ''
+
+        # Safety-net: strip any remaining city/contract suffix
+        title = _CITY_SUFFIX_RE.sub('', title).strip().rstrip('|').strip()
 
         jobs.append({
             'id': f'alterlab-{slug}-{job_id}',
@@ -434,6 +476,9 @@ def scrape_alterlab() -> int:
         for job in jobs:
             job_id = job['id']
             if not job_id or not job.get('title'):
+                continue
+            if _is_invalid_title(job['title']):
+                logger.debug(f'[alterlab] skipping blacklisted title: {job["title"][:60]}')
                 continue
             try:
                 existing = supabase.table('scraped_jobs').select('id').eq('id', job_id).execute()

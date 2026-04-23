@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { Zap, Sun, Moon, LogOut } from 'lucide-react'
 import { useTheme } from '@/components/ThemeProvider'
 import { useUser } from '@/components/UserContext'
@@ -32,8 +33,8 @@ function ThemeToggle() {
 function UserAvatar() {
   const { user, logout } = useUser()
   const [open, setOpen] = useState(false)
+  const [imgFailed, setImgFailed] = useState(false)
 
-  // Close dropdown on outside click
   useEffect(() => {
     if (!open) return
     const handler = () => setOpen(false)
@@ -41,34 +42,42 @@ function UserAvatar() {
     return () => document.removeEventListener('click', handler)
   }, [open])
 
-  const initials = user?.initials ?? 'JL'
-  const hasUser = !!user
+  if (!user) return null
+
+  const showPhoto = !!user.avatarUrl && !imgFailed
 
   return (
     <div className="relative">
       <button
         onClick={(e) => {
           e.stopPropagation()
-          if (hasUser) setOpen((v) => !v)
+          setOpen((v) => !v)
         }}
-        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold text-white transition-opacity hover:opacity-90"
-        style={{ background: 'var(--d-accent)' }}
-        title={user ? user.email : undefined}
+        className="flex h-7 w-7 flex-shrink-0 items-center justify-center overflow-hidden rounded-full transition-opacity hover:opacity-90"
+        style={showPhoto ? undefined : { background: 'var(--d-accent)' }}
+        title={user.email}
       >
-        {initials}
+        {showPhoto ? (
+          <Image
+            src={user.avatarUrl!}
+            alt={user.name}
+            width={28}
+            height={28}
+            className="h-full w-full object-cover"
+            onError={() => setImgFailed(true)}
+          />
+        ) : (
+          <span className="text-xs font-bold text-white">{user.initials}</span>
+        )}
       </button>
 
-      {/* Dropdown — only when logged in */}
-      {open && hasUser && (
+      {open && (
         <div
           className="absolute right-0 top-9 z-20 min-w-[200px] overflow-hidden rounded-xl border py-1 shadow-lg"
           style={{ background: 'var(--d-nav)', borderColor: 'var(--d-border)' }}
           onClick={(e) => e.stopPropagation()}
         >
-          <div
-            className="border-b px-4 py-3"
-            style={{ borderColor: 'var(--d-border)' }}
-          >
+          <div className="border-b px-4 py-3" style={{ borderColor: 'var(--d-border)' }}>
             <p className="text-xs font-semibold" style={{ color: 'var(--d-text)' }}>
               {user.name}
             </p>
@@ -78,6 +87,15 @@ function UserAvatar() {
             >
               {user.email}
             </p>
+            {user.isPro && (
+              <span
+                className="font-mono-dm mt-1.5 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium"
+                style={{ background: 'var(--d-accent-subtle)', color: 'var(--d-accent-text)' }}
+              >
+                <Zap className="h-2.5 w-2.5 fill-current" />
+                Pro
+              </span>
+            )}
           </div>
           <button
             onClick={() => { logout(); setOpen(false) }}
@@ -102,7 +120,6 @@ export default function DashNav() {
       className="flex h-12 flex-shrink-0 items-center justify-between border-b px-5"
       style={{ background: 'var(--d-nav)', borderColor: 'var(--d-border)' }}
     >
-      {/* Logo */}
       <Link href="/" className="flex items-center gap-1.5">
         <Zap
           className="h-4 w-4"
@@ -113,7 +130,6 @@ export default function DashNav() {
         </span>
       </Link>
 
-      {/* Right actions */}
       <div className="flex items-center gap-2">
         <Link
           href="/pricing"
@@ -125,7 +141,6 @@ export default function DashNav() {
 
         <ThemeToggle />
 
-        {/* Only show Upgrade when not logged in, or always for free tier — keep simple */}
         {!user && (
           <Link
             href="/pricing"
@@ -137,7 +152,8 @@ export default function DashNav() {
           </Link>
         )}
 
-        {user && (
+        {/* Show Upgrade only when logged in and not yet Pro */}
+        {user && !user.isPro && (
           <button
             onClick={openUpgradeModal}
             className="hidden items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 sm:flex"
