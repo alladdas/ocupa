@@ -52,7 +52,10 @@ export default function DashboardPage() {
     if (append) setLoadingMore(true)
     else setLoading(true)
 
-    fetch(buildUrl(off, currentFilters))
+    fetch(buildUrl(off, currentFilters), {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache' },
+    })
       .then((r) => r.json())
       .then((data: unknown) => {
         if (Array.isArray(data)) {
