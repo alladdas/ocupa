@@ -45,17 +45,18 @@ def _work_model(text: str) -> str:
 # ─── Title quality helpers ────────────────────────────────────────────────────
 
 # Substrings (lowercase) that identify nav/UI noise, not job titles
-_TITLE_BLACKLIST = (
-    'skip to main',
-    "gupy's terms",
-    "gupy's privacy",
-    'terms of use',
-    'privacy notice',
-    'cookie',
-    'feedback badge',
-    'join our talent pool',
-    'join the talent pool',
-)
+_TITLE_BLACKLIST = [
+    'skip to main', 'terms of use', 'privacy notice',
+    'page not found', '404 error', 'job posting you',
+    'early career', 'veja nossas vagas', 'jobs at ',
+    'current openings', 'o inter está', 'conheça nossos',
+    'saiba mais', 'para saber mais', 'venha transformar',
+    'somos milhares', 'diversidade e inclusão', 'careers',
+    'picpay careers', 'talent pool', 'feedback badge',
+    'login', 'using hotmart', 'the company', 'our impact',
+    'follow us', 'ask questions', 'education',
+    "gupy's terms", "gupy's privacy", 'cookie',
+]
 
 # Strips city/state/contract suffix from Gupy-style titles
 # e.g. "Engineering Lead | Plataforma São Paulo - SP and Hybrid…" → "Engineering Lead | Plataforma"
@@ -72,10 +73,26 @@ _IFOOD_PREFIX_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Detects location pasted directly at the start with no separator
+# e.g. "remotoengenheiro", "Brasilanalista", "São Paulo, SP, Brazilanalista"
+_CITY_PREFIX_RE = re.compile(
+    r'^(brasil|brazil|remoto|remote|osasco|híbrido|hybrid|'
+    r'são paulo|rio de janeiro|belo horizonte|goiânia|'
+    r'guarulhos|campinas|curitiba|fortaleza|salvador|'
+    r'[a-záéíóú]+,\s*[a-záéíóú\s]+,\s*brazil)',
+    re.IGNORECASE,
+)
+
 
 def _is_invalid_title(title: str) -> bool:
-    t = (title or '').lower()
-    return any(bl in t for bl in _TITLE_BLACKLIST)
+    if not title or len(title) < 8 or len(title) > 200:
+        return True
+    t = title.lower().strip()
+    if any(bad in t for bad in _TITLE_BLACKLIST):
+        return True
+    if _CITY_PREFIX_RE.match(title):
+        return True
+    return False
 
 
 # ─── AlterLab request ─────────────────────────────────────────────────────────
