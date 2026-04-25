@@ -4,6 +4,7 @@ import time
 from scrapers.gupy import scrape_gupy
 from scrapers.greenhouse import scrape_greenhouse
 from scrapers.alterlab import scrape_alterlab
+from scrapers.amazon import scrape_amazon
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,25 +35,32 @@ def run_frequent() -> None:
     logger.info(f'── Total: {total} new jobs inserted ─────────')
 
 
-def run_alterlab() -> None:
-    """AlterLab runs once per day (API credits cost money)."""
-    logger.info('── AlterLab run started ─────────────────────')
+def run_daily() -> None:
+    """Amazon + AlterLab run once per day."""
+    logger.info('── Daily run started ────────────────────────')
     try:
-        new = scrape_alterlab()
-        logger.info(f'AlterLab   → {new} new jobs')
+        amazon_new = scrape_amazon()
+        logger.info(f'Amazon     → {amazon_new} new jobs')
+    except Exception as exc:
+        logger.error(f'Amazon failed: {exc}')
+
+    try:
+        alterlab_new = scrape_alterlab()
+        logger.info(f'AlterLab   → {alterlab_new} new jobs')
     except Exception as exc:
         logger.error(f'AlterLab failed: {exc}')
-    logger.info('── AlterLab run finished ────────────────────')
+
+    logger.info('── Daily run finished ───────────────────────')
 
 
 if __name__ == '__main__':
     logger.info('Scheduler starting')
 
-    run_frequent()   # Run immediately on startup
-    run_alterlab()   # Run AlterLab once on startup too
+    run_frequent()  # Run immediately on startup
+    run_daily()     # Run daily scrapers once on startup too
 
     schedule.every(30).minutes.do(run_frequent)
-    schedule.every().day.at('06:00').do(run_alterlab)
+    schedule.every().day.at('06:00').do(run_daily)
 
     while True:
         schedule.run_pending()

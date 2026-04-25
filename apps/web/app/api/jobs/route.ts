@@ -53,6 +53,8 @@ const DOMAIN_MAP: Record<string, string> = {
   natura: 'natura.com.br',
   magazineluiza: 'magazineluiza.com.br',
   rededeaor: 'rededeaor.com.br',
+  amazon: 'amazon.com.br',
+  dtidigital: 'dtidigital.com.br',
 }
 
 // ─── Company slug → display name ─────────────────────────────────────────────
@@ -88,6 +90,9 @@ const NAME_MAP: Record<string, string> = {
   ambev: 'Ambev',
   dasa: 'DASA',
   rededeaor: 'Rede D\'Or',
+  amazon: 'Amazon',
+  dtidigital: 'DTI Digital',
+  hotmart_br: 'Hotmart',
   nubank: 'Nubank',
   wildlifestudios: 'Wildlife Studios',
   cloudwalk: 'CloudWalk',

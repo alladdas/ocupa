@@ -10,6 +10,7 @@ import re
 import json
 import logging
 import requests
+from bs4 import BeautifulSoup
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
@@ -23,11 +24,13 @@ ALTERLAB_URL = 'https://api.alterlab.io/api/v1/scrape'
 # type drives which parser is attempted first
 COMPANIES: dict[str, dict] = {
     # All are SPAs with no public API — require JS rendering
-    'ifood':    {'url': 'https://carreiras.ifood.com.br', 'type': 'custom', 'render_js': True},
+    'ifood':      {'url': 'https://carreiras.ifood.com.br',                     'type': 'custom',     'render_js': True, 'formats': ['html']},
     # stone moved to greenhouse.py (boards-api.greenhouse.io/v1/boards/stone → 459 jobs)
     # loggi removed — no open positions
-    'creditas': {'url': 'https://creditas.gupy.io',       'type': 'gupy_board', 'render_js': True},
-    'hotmart':  {'url': 'https://hotmart.com/en/jobs',    'type': 'custom', 'render_js': True},
+    'creditas':   {'url': 'https://creditas.gupy.io',                           'type': 'gupy_board', 'render_js': True},
+    'hotmart':    {'url': 'https://hotmart.com/en/jobs',                        'type': 'custom',     'render_js': True},
+    'hotmart_br': {'url': 'https://hotmart.com/pt-br/trabalhe-conosco/vagas',   'type': 'custom',     'render_js': True, 'formats': ['html']},
+    'dtidigital': {'url': 'https://www.dtidigital.com.br/carreiras',            'type': 'custom',     'render_js': True, 'formats': ['html']},
 }
 
 
@@ -97,7 +100,7 @@ def _is_invalid_title(title: str) -> bool:
 
 # ─── AlterLab request ─────────────────────────────────────────────────────────
 
-def _scrape(url: str, render_js: bool = False) -> dict | None:
+def _scrape(url: str, render_js: bool = False, formats: list[str] | None = None) -> dict | None:
     api_key = os.environ.get('ALTERLAB_API_KEY', '')
     if not api_key:
         logger.error('ALTERLAB_API_KEY not set — skipping alterlab scraper')
@@ -111,7 +114,7 @@ def _scrape(url: str, render_js: bool = False) -> dict | None:
                 'url': url,
                 'render_js': render_js,
                 'cost_controls': {'prefer_cost': True, 'max_tier': '3'},
-                'formats': ['json', 'text'],
+                'formats': formats or ['json', 'text'],
             },
             timeout=120,
         )
@@ -254,6 +257,145 @@ def _parse_ifood_text(text: str) -> list[dict]:
             'company': 'ifood',
             'location': location,
             'url': 'https://carreiras.ifood.com.br',
+            'employment_type': _work_model(location),
+            'salary_min': None,
+            'salary_max': None,
+            'posted_at': None,
+            'description': '',
+            'source': 'alterlab',
+            'tier': 'free',
+        })
+
+    return jobs
+
+
+def _parse_ifood_html(raw_html: str) -> list[dict]:
+    """
+    Parses iFood careers page HTML returned by AlterLab (formats: ['html']).
+    Targets <a href="/job/{id}/"> anchors inside <li> items.
+    """
+    soup = BeautifulSoup(raw_html, 'html.parser')
+    jobs = []
+    seen_ids: set[str] = set()
+
+    for a_tag in soup.find_all('a', href=re.compile(r'^/job/\d+/')):
+        href = a_tag.get('href', '')
+        m = re.search(r'/job/(\d+)/', href)
+        if not m:
+            continue
+        job_id = m.group(1)
+        if job_id in seen_ids:
+            continue
+        seen_ids.add(job_id)
+
+        title = a_tag.get_text(strip=True)
+        if not title:
+            continue
+
+        li = a_tag.find_parent('li')
+        spans = li.find_all('span') if li else []
+        location = spans[1].get_text(strip=True) if len(spans) > 1 else ''
+
+        jobs.append({
+            'id': f'alterlab-ifood-{job_id}',
+            'title': title,
+            'company': 'ifood',
+            'location': location,
+            'url': f'https://carreiras.ifood.com.br/job/{job_id}/',
+            'employment_type': _work_model(location),
+            'salary_min': None,
+            'salary_max': None,
+            'posted_at': None,
+            'description': '',
+            'source': 'alterlab',
+            'tier': 'free',
+        })
+
+    return jobs
+
+
+def _parse_hotmart_br(raw_html: str) -> list[dict]:
+    """
+    Parses Hotmart PT-BR careers page HTML.
+    Targets <p class="hot-position-card__job"> for title and
+    <a href="/pt-br/trabalhe-conosco/vagas/{id}/{slug}"> for URL.
+    """
+    soup = BeautifulSoup(raw_html, 'html.parser')
+    jobs = []
+    seen_ids: set[str] = set()
+
+    for a_tag in soup.find_all('a', href=re.compile(r'/pt-br/trabalhe-conosco/vagas/\d+')):
+        href = a_tag.get('href', '')
+        m = re.search(r'/vagas/(\d+)', href)
+        if not m:
+            continue
+        job_id = m.group(1)
+        if job_id in seen_ids:
+            continue
+        seen_ids.add(job_id)
+
+        p_tag = a_tag.find('p', class_=re.compile(r'hot-position-card__job'))
+        title = p_tag.get_text(strip=True) if p_tag else a_tag.get_text(strip=True)
+        if not title:
+            continue
+
+        jobs.append({
+            'id': f'alterlab-hotmart_br-{job_id}',
+            'title': title,
+            'company': 'hotmart',
+            'location': '',
+            'url': f'https://hotmart.com{href}',
+            'employment_type': 'presencial',
+            'salary_min': None,
+            'salary_max': None,
+            'posted_at': None,
+            'description': '',
+            'source': 'alterlab',
+            'tier': 'free',
+        })
+
+    return jobs
+
+
+def _parse_dtidigital(raw_html: str) -> list[dict]:
+    """
+    Parses DTI Digital careers page HTML.
+    Structure: <h4>title</h4> <h3>location</h3> <h3>seniority</h3>
+    <a href="https://dtidigital.inhire.app/vagas/{uuid}/{slug}">
+    """
+    soup = BeautifulSoup(raw_html, 'html.parser')
+    jobs = []
+    seen_ids: set[str] = set()
+
+    for a_tag in soup.find_all('a', href=re.compile(r'dtidigital\.inhire\.app/vagas/')):
+        href = a_tag.get('href', '')
+        m = re.search(r'/vagas/([a-f0-9\-]{36})', href)
+        if not m:
+            continue
+        job_id = m.group(1)
+        if job_id in seen_ids:
+            continue
+        seen_ids.add(job_id)
+
+        # Look for the nearest ancestor that contains the h4/h3 siblings
+        container = a_tag.find_parent(['div', 'li', 'article', 'section'])
+        if not container:
+            continue
+
+        h4 = container.find('h4')
+        h3s = container.find_all('h3')
+        title = h4.get_text(strip=True) if h4 else ''
+        location = h3s[0].get_text(strip=True) if len(h3s) > 0 else ''
+
+        if not title:
+            continue
+
+        jobs.append({
+            'id': f'alterlab-dtidigital-{job_id}',
+            'title': title,
+            'company': 'dtidigital',
+            'location': location,
+            'url': href,
             'employment_type': _work_model(location),
             'salary_min': None,
             'salary_max': None,
@@ -423,11 +565,31 @@ def _parse_generic_json(payload: dict | list, source_url: str, slug: str) -> lis
 def _extract_jobs(slug: str, company_type: str, source_url: str, response: dict) -> list[dict]:
     payload, text = _extract_payload(response)
 
-    # iFood has a known text format — try it first before generic parsers
-    if slug == 'ifood' and text:
-        jobs = _parse_ifood_text(text)
+    raw_html = response.get('raw_html', '')
+
+    # iFood: try HTML parser first (formats: ['html']), fall back to text
+    if slug == 'ifood':
+        if raw_html:
+            jobs = _parse_ifood_html(raw_html)
+            if jobs:
+                logger.debug(f'[alterlab] ifood HTML parser → {len(jobs)} vagas')
+                return jobs
+        if text:
+            jobs = _parse_ifood_text(text)
+            if jobs:
+                logger.debug(f'[alterlab] ifood text parser → {len(jobs)} vagas')
+                return jobs
+
+    if slug == 'hotmart_br' and raw_html:
+        jobs = _parse_hotmart_br(raw_html)
         if jobs:
-            logger.debug(f'[alterlab] ifood text parser → {len(jobs)} vagas')
+            logger.debug(f'[alterlab] hotmart_br HTML parser → {len(jobs)} vagas')
+            return jobs
+
+    if slug == 'dtidigital' and raw_html:
+        jobs = _parse_dtidigital(raw_html)
+        if jobs:
+            logger.debug(f'[alterlab] dtidigital HTML parser → {len(jobs)} vagas')
             return jobs
 
     # 1. Try the typed parser first
@@ -480,8 +642,9 @@ def scrape_alterlab() -> int:
         company_type = config['type']
 
         render_js = config.get('render_js', False)
+        formats = config.get('formats')
         logger.debug(f'[alterlab] Scraping {slug} ({url}) render_js={render_js}')
-        response = _scrape(url, render_js=render_js)
+        response = _scrape(url, render_js=render_js, formats=formats)
         if response is None:
             logger.warning(f'[alterlab] No response for {slug} — skipping')
             continue

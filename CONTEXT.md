@@ -1,7 +1,7 @@
 # Ocupa — Contexto Completo do Projeto
 
 > Documento de referência para onboarding de desenvolvedores e continuação de conversas com IA.  
-> Última atualização: 2026-04-23
+> Última atualização: 2026-04-24
 
 ---
 
@@ -46,8 +46,8 @@ Pagamento via Stripe (ainda não integrado — placeholder em `/checkout`).
 
 ### Backend / Scrapers
 - **Python 3.11+**
-- Bibliotecas: `supabase`, `requests`, `schedule`, `python-dotenv`
-- 3 scrapers: Gupy portal, Greenhouse API pública, AlterLab (JS rendering)
+- Bibliotecas: `supabase`, `requests`, `schedule`, `python-dotenv`, `beautifulsoup4`
+- 4 scrapers: Gupy portal, Greenhouse API pública, Amazon Jobs API pública, AlterLab (JS rendering)
 - Rodam como processo contínuo (servidor ou container)
 
 ### Banco de Dados
@@ -102,6 +102,7 @@ ocupa/
 │       ├── scrapers/
 │       │   ├── gupy.py                 # Gupy portal público (companyId)
 │       │   ├── greenhouse.py           # Greenhouse API pública (slug)
+│       │   ├── amazon.py               # Amazon Jobs API pública (search.json)
 │       │   └── alterlab.py             # AlterLab para SPAs com JS rendering
 │       ├── scheduler.py                # Orquestra scrapers (schedule lib)
 │       ├── backfill_descriptions.py    # Preenche descrições faltando
@@ -159,7 +160,7 @@ Existe um schema expandido com tabelas para: `users`, `user_profiles`, `resumes`
 
 ### Frequência
 - **Gupy + Greenhouse**: a cada 30 minutos
-- **AlterLab**: 1x/dia às 06:00 + ao iniciar o processo
+- **Amazon + AlterLab**: 1x/dia às 06:00 + ao iniciar o processo
 
 ### Gupy (`scrapers/gupy.py`)
 - API: `https://employability-portal.gupy.io/api/v1/jobs?companyId={id}&limit=100`
@@ -187,34 +188,54 @@ Existe um schema expandido com tabelas para: `users`, `user_profiles`, `resumes`
 
 > Stone movida para cá após confirmar que `boards-api.greenhouse.io/v1/boards/stone/jobs` retorna 459 vagas.
 
+### Amazon Jobs (`scrapers/amazon.py`)
+- API: `https://www.amazon.jobs/en/search.json` (GET, sem autenticação)
+- Parâmetros: `base_query=`, `loc_query=Brazil`, `job_count=100`, `result_limit=100`, `country=BRA`, `offset=N`
+- Retorna `hits` (total) e `jobs[]` com: `id` (UUID), `title`, `city`, `state`, `job_path`, `posted_date`, `normalized_location`
+- Paginação por `offset=100, 200, ...` até `len(jobs) < 100`
+- ~495 vagas ativas em 2026-04-24; URL completa = `https://www.amazon.jobs{job_path}`
+- `posted_date` formato "April 22, 2026" → parseado com `strptime('%B %d, %Y')`
+
 ### AlterLab (`scrapers/alterlab.py`)
 - API: `https://api.alterlab.io/api/v1/scrape` (POST, `X-API-Key: ALTERLAB_API_KEY`)
 - Renderiza JS — necessário para SPAs
 - Custo por requisição — use com moderação
+- Suporta `formats: ['html']` → retorna `raw_html` para parsing com BeautifulSoup
 
-**Empresas configuradas (3):**
+**Empresas configuradas (5):**
 | slug | URL | Tipo de parser |
 |------|-----|----------------|
-| ifood | https://carreiras.ifood.com.br | `custom` (text parser regex) |
+| ifood | https://carreiras.ifood.com.br | `custom` HTML (`_parse_ifood_html`) |
 | creditas | https://creditas.gupy.io | `gupy_board` (JSON `items[]`) |
 | hotmart | https://hotmart.com/en/jobs | `custom` (generic JSON walker) |
+| hotmart_br | https://hotmart.com/pt-br/trabalhe-conosco/vagas | `custom` HTML (`_parse_hotmart_br`) |
+| dtidigital | https://www.dtidigital.com.br/carreiras | `custom` HTML (`_parse_dtidigital`) |
 
 **Hierarquia de parsers em `_extract_jobs`:**
-1. iFood: text parser específico (`_parse_ifood_text`)
-2. Typed parser: greenhouse / lever / gupy_board
-3. Generic JSON walker (`_parse_generic_json`)
-4. Double-encoded JSON fallback
-5. Text fallback (`_parse_text_fallback`)
+1. iFood: HTML parser (`_parse_ifood_html`) → fallback text (`_parse_ifood_text`)
+2. hotmart_br: HTML parser (`_parse_hotmart_br`)
+3. dtidigital: HTML parser (`_parse_dtidigital`)
+4. Typed parser: greenhouse / lever / gupy_board
+5. Generic JSON walker (`_parse_generic_json`)
+6. Double-encoded JSON fallback
+7. Text fallback (`_parse_text_fallback`)
 
 **Limpeza de títulos:**
 - `_TITLE_BLACKLIST`: filtra links de navegação (Terms of Use, Privacy Notice, etc.)
 - `_CITY_SUFFIX_RE`: remove "São Paulo - SP and Hybrid Full-time employee" de títulos Gupy
 - `_IFOOD_PREFIX_RE`: remove cidade colada no início do título (ex: "Osasco, Analista...")
+- `_CITY_PREFIX_RE`: detecta localização grudada no início sem separador (ex: "remotoengenheiro")
 
 **Empresas removidas/migradas:**
 - `stone` → migrada para `greenhouse.py` (459 vagas, API direta)
 - `loggi` → removida (sem vagas abertas no momento)
 - Empresas que estavam no AlterLab mas têm Greenhouse API: xpinc, c6bank, picpay, quintoandar, vtex, inter
+
+### Google Careers — Pendente (2026-04-24)
+- `careers.google.com/api/v3/search/` → **HTTP 404** (ambos endpoints testados)
+- Não possui API pública acessível
+- **Status: requer solução paga (Apify, Bright Data) ou Selenium headless**
+- Não usar AlterLab para Google (centenas de páginas para paginar, custo alto)
 
 ---
 
@@ -340,10 +361,13 @@ Nubank, Wildlife Studios, CloudWalk, Neon, Caju, Flash, Alice, Dock, Unico, CI&T
 ### Gupy Portal (5 empresas)
 Ambev, Renner, Boticário, Vivo, DASA
 
-### AlterLab (3 empresas)
-iFood, Creditas, Hotmart
+### Amazon Jobs API (1 empresa)
+Amazon (~495 vagas em BR, paginação por 100)
 
-### Total: ~25 empresas ativas
+### AlterLab (5 empresas)
+iFood, Creditas, Hotmart (EN), Hotmart BR, DTI Digital
+
+### Total: ~28 empresas ativas
 
 ---
 
@@ -405,7 +429,10 @@ python debug_alterlab.py hotmart --full    # output completo
 | Componente | Issue | Status |
 |------------|-------|--------|
 | Google OAuth | Precisa configurar no Supabase dashboard | Aguardando config |
-| Hotmart parser | Não validado após mudança de URL para `hotmart.com/en/jobs` | Precisa debug |
+| Hotmart EN parser | Não validado após mudança de URL para `hotmart.com/en/jobs` | Precisa debug |
+| Hotmart BR parser | `_parse_hotmart_br` implementado, não testado em prod | Aguardando run |
+| DTI Digital parser | `_parse_dtidigital` implementado, não testado em prod | Aguardando run |
+| Google Careers | API pública retorna 404 | Pendente — requer solução paga ou Selenium |
 | Descrições de vagas | Maioria das vagas AlterLab não tem descrição | Backfill disponível |
 | Stripe | Checkout é placeholder | Não iniciado |
 | Títulos inválidos no banco | Vagas com "Terms of Use", "Privacy Notice" etc. inseridas antes do blacklist | Migration 005 resolve |
