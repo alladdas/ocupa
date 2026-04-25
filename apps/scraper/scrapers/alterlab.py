@@ -29,7 +29,7 @@ COMPANIES: dict[str, dict] = {
     # loggi removed — no open positions
     'creditas':   {'url': 'https://creditas.gupy.io',                           'type': 'gupy_board', 'render_js': True},
     'hotmart':    {'url': 'https://hotmart.com/en/jobs',                        'type': 'custom',     'render_js': True},
-    'hotmart_br': {'url': 'https://hotmart.com/pt-br/trabalhe-conosco/vagas',   'type': 'custom',     'render_js': True, 'formats': ['html']},
+    # hotmart_br removed — jobs load async and aren't present in rendered HTML; no public API
     'dtidigital': {'url': 'https://www.dtidigital.com.br/carreiras',            'type': 'custom',     'render_js': True, 'formats': ['html']},
 }
 
@@ -362,6 +362,8 @@ def _parse_dtidigital(raw_html: str) -> list[dict]:
     Parses DTI Digital careers page HTML.
     Structure: <h4>title</h4> <h3>location</h3> <h3>seniority</h3>
     <a href="https://dtidigital.inhire.app/vagas/{uuid}/{slug}">
+    The <a> is nested several divs below the card root; walk up until
+    we reach a container that also contains the <h4> job title.
     """
     soup = BeautifulSoup(raw_html, 'html.parser')
     jobs = []
@@ -377,14 +379,21 @@ def _parse_dtidigital(raw_html: str) -> list[dict]:
             continue
         seen_ids.add(job_id)
 
-        # Look for the nearest ancestor that contains the h4/h3 siblings
-        container = a_tag.find_parent(['div', 'li', 'article', 'section'])
-        if not container:
+        # Walk up the tree until we find a container that holds the h4 title
+        container = a_tag.parent
+        for _ in range(8):
+            if container is None or container.name in (None, '[document]', 'html', 'body'):
+                break
+            if container.find('h4'):
+                break
+            container = container.parent
+
+        if container is None or not container.find('h4'):
             continue
 
         h4 = container.find('h4')
         h3s = container.find_all('h3')
-        title = h4.get_text(strip=True) if h4 else ''
+        title = h4.get_text(strip=True)
         location = h3s[0].get_text(strip=True) if len(h3s) > 0 else ''
 
         if not title:
@@ -565,7 +574,13 @@ def _parse_generic_json(payload: dict | list, source_url: str, slug: str) -> lis
 def _extract_jobs(slug: str, company_type: str, source_url: str, response: dict) -> list[dict]:
     payload, text = _extract_payload(response)
 
-    raw_html = response.get('raw_html', '')
+    # AlterLab returns HTML under response['content']['html'] when formats=['html'].
+    # response['raw_html'] exists as a key but is null — use content.html as primary.
+    raw_html: str = (
+        response.get('raw_html')
+        or response.get('content', {}).get('html')
+        or ''
+    )
 
     # iFood: try HTML parser first (formats: ['html']), fall back to text
     if slug == 'ifood':
@@ -579,12 +594,6 @@ def _extract_jobs(slug: str, company_type: str, source_url: str, response: dict)
             if jobs:
                 logger.debug(f'[alterlab] ifood text parser → {len(jobs)} vagas')
                 return jobs
-
-    if slug == 'hotmart_br' and raw_html:
-        jobs = _parse_hotmart_br(raw_html)
-        if jobs:
-            logger.debug(f'[alterlab] hotmart_br HTML parser → {len(jobs)} vagas')
-            return jobs
 
     if slug == 'dtidigital' and raw_html:
         jobs = _parse_dtidigital(raw_html)
@@ -638,38 +647,42 @@ def scrape_alterlab() -> int:
     total_new = 0
 
     for slug, config in COMPANIES.items():
-        url = config['url']
-        company_type = config['type']
+        try:
+            url = config['url']
+            company_type = config['type']
 
-        render_js = config.get('render_js', False)
-        formats = config.get('formats')
-        logger.debug(f'[alterlab] Scraping {slug} ({url}) render_js={render_js}')
-        response = _scrape(url, render_js=render_js, formats=formats)
-        if response is None:
-            logger.warning(f'[alterlab] No response for {slug} — skipping')
-            continue
-
-        jobs = _extract_jobs(slug, company_type, url, response)
-        logger.debug(f'[alterlab] {slug} → {len(jobs)} vagas extraídas')
-
-        new_count = 0
-        for job in jobs:
-            job_id = job['id']
-            if not job_id or not job.get('title'):
+            render_js = config.get('render_js', False)
+            formats = config.get('formats')
+            logger.debug(f'[alterlab] Scraping {slug} ({url}) render_js={render_js}')
+            response = _scrape(url, render_js=render_js, formats=formats)
+            if response is None:
+                logger.warning(f'[alterlab] No response for {slug} — skipping')
                 continue
-            if _is_invalid_title(job['title']):
-                logger.debug(f'[alterlab] skipping blacklisted title: {job["title"][:60]}')
-                continue
-            try:
-                existing = supabase.table('scraped_jobs').select('id').eq('id', job_id).execute()
-                if existing.data:
+
+            jobs = _extract_jobs(slug, company_type, url, response)
+            logger.debug(f'[alterlab] {slug} → {len(jobs)} vagas extraídas')
+
+            new_count = 0
+            for job in jobs:
+                job_id = job['id']
+                if not job_id or not job.get('title'):
                     continue
-                supabase.table('scraped_jobs').insert(job).execute()
-                new_count += 1
-            except Exception as exc:
-                logger.warning(f'[alterlab] Supabase error ({slug} #{job_id}): {exc}')
+                if _is_invalid_title(job['title']):
+                    logger.debug(f'[alterlab] skipping blacklisted title: {job["title"][:60]}')
+                    continue
+                try:
+                    existing = supabase.table('scraped_jobs').select('id').eq('id', job_id).execute()
+                    if existing.data:
+                        continue
+                    supabase.table('scraped_jobs').insert(job).execute()
+                    new_count += 1
+                except Exception as exc:
+                    logger.warning(f'[alterlab] Supabase error ({slug} #{job_id}): {exc}')
 
-        total_new += new_count
-        logger.info(f'[alterlab] {slug} → {new_count} new jobs')
+            total_new += new_count
+            logger.info(f'[alterlab] {slug} → {new_count} new jobs')
+
+        except Exception as exc:
+            logger.exception(f'[alterlab] Unexpected error processing {slug}: {exc}')
 
     return total_new

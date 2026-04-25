@@ -12,15 +12,17 @@ ALTERLAB_URL = 'https://api.alterlab.io/api/v1/scrape'
 API_KEY = os.environ.get('ALTERLAB_API_KEY', '')
 
 COMPANIES = {
-    'ifood':    'https://carreiras.ifood.com.br',
-    'stone':    'https://stone.gupy.io',
-    'creditas': 'https://creditas.gupy.io',
-    'hotmart':  'https://hotmart.com/en/jobs',
-    'loggi':    'https://loggi.gupy.io',
+    'ifood':      {'url': 'https://carreiras.ifood.com.br',                   'formats': ['html']},
+    'stone':      {'url': 'https://stone.gupy.io',                            'formats': ['json', 'text']},
+    'creditas':   {'url': 'https://creditas.gupy.io',                         'formats': ['json', 'text']},
+    'hotmart':    {'url': 'https://hotmart.com/en/jobs',                      'formats': ['json', 'text']},
+    'hotmart_br': {'url': 'https://hotmart.com/pt-br/trabalhe-conosco/vagas', 'formats': ['html']},
+    'dtidigital': {'url': 'https://www.dtidigital.com.br/carreiras',          'formats': ['html']},
+    'loggi':      {'url': 'https://loggi.gupy.io',                            'formats': ['json', 'text']},
 }
 
 
-def scrape(url: str) -> dict:
+def scrape(url: str, formats: list[str] | None = None) -> dict:
     resp = requests.post(
         ALTERLAB_URL,
         headers={'X-API-Key': API_KEY, 'Content-Type': 'application/json'},
@@ -28,7 +30,7 @@ def scrape(url: str) -> dict:
             'url': url,
             'render_js': True,
             'cost_controls': {'prefer_cost': True, 'max_tier': '3'},
-            'formats': ['json', 'text'],
+            'formats': formats or ['json', 'text'],
         },
         timeout=120,
     )
@@ -49,13 +51,13 @@ def print_section(title: str, content: str, limit: int = 800) -> None:
             print(f'  ... [{len(content) - limit} chars restantes]')
 
 
-def inspect(slug: str, url: str, limit: int = 800) -> None:
+def inspect(slug: str, url: str, formats: list[str] | None = None, limit: int = 800) -> None:
     print(f'\n{"═"*60}')
     print(f'  EMPRESA: {slug.upper()}  →  {url}')
     print('═'*60)
 
     try:
-        raw = scrape(url)
+        raw = scrape(url, formats=formats)
     except Exception as e:
         print(f'  ERRO na requisição: {e}')
         return
@@ -72,9 +74,14 @@ def inspect(slug: str, url: str, limit: int = 800) -> None:
         text_val = container.get('text', '')
         md_val   = container.get('markdown', '')
 
-        if json_val is not None or text_val or md_val:
+        html_val = raw.get('raw_html', '') or container.get('html', '')
+        if json_val is not None or text_val or md_val or html_val:
             print(f'  Conteúdo encontrado em: envelope="{path or "(raiz)"}"')
             print(f'  Tipo do campo json: {type(json_val).__name__}')
+
+            # Show raw_html preview (for formats: ['html'] requests)
+            if html_val:
+                print_section(f'RAW_HTML ({limit or "full"})', html_val, limit=limit)
 
             # Show text preview
             if text_val:
@@ -120,9 +127,11 @@ if __name__ == '__main__':
     full_mode = '--full' in args
     target = next((a for a in args if not a.startswith('--')), None)
 
-    for slug, url in COMPANIES.items():
+    for slug, cfg in COMPANIES.items():
         if target and slug != target:
             continue
-        inspect(slug, url, limit=0 if full_mode else 800)
+        url = cfg['url'] if isinstance(cfg, dict) else cfg
+        fmts = cfg.get('formats') if isinstance(cfg, dict) else None
+        inspect(slug, url, formats=fmts, limit=0 if full_mode else 1000)
 
     print('\n\nDone.')
