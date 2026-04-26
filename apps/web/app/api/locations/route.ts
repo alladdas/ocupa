@@ -66,16 +66,16 @@ export async function GET(request: Request) {
   }
 
   const allCities: CityEntry[] = []
-  for (const [, variants] of groups) {
+  groups.forEach((variants) => {
     let canonical = ''
     let maxVariantCount = 0
     let total = 0
-    for (const [name, cnt] of variants) {
+    variants.forEach((cnt, name) => {
       total += cnt
       if (cnt > maxVariantCount) { maxVariantCount = cnt; canonical = name }
-    }
+    })
     allCities.push({ name: canonical, count: total })
-  }
+  })
 
   // Remoto first, then by count DESC
   allCities.sort((a, b) => {

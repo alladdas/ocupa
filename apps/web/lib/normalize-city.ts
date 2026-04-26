@@ -1,4 +1,4 @@
-const COUNTRIES = new Set([
+﻿const COUNTRIES = new Set([
   'brasil', 'brazil', 'argentina', 'colombia', 'mexico', 'usa',
   'canada', 'france', 'spain', 'netherlands', 'germany', 'holanda',
   'united states', 'united kingdom', 'uk', 'uruguay', 'chile', 'peru',
@@ -23,7 +23,7 @@ export function normalizeCity(raw: string): string | null {
   const parts = trimmed.split(',').map(p => p.trim()).filter(Boolean)
   if (!parts.length) return null
 
-  // Handle "Country, City" format (e.g. "Brasil, São Paulo" or "Brazil, Sao Paulo")
+  // Handle "Country, City" format (e.g. "Brasil, Sao Paulo" or "Brazil, Sao Paulo")
   let city = parts[0]
   if (COUNTRIES.has(stripAccents(parts[0]).toLowerCase())) {
     if (parts.length < 2) return null
