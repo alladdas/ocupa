@@ -77,17 +77,15 @@ export async function GET(request: Request) {
     allCities.push({ name: canonical, count: total })
   })
 
-  // Remoto first, then by count DESC
-  allCities.sort((a, b) => {
-    if (a.name === 'Remoto') return -1
-    if (b.name === 'Remoto') return 1
-    return b.count - a.count
-  })
+  // Remoto is covered by the Modelo filter — exclude from city list
+  const citiesWithoutRemoto = allCities.filter(c => c.name !== 'Remoto')
 
-  cachedCities = allCities
+  citiesWithoutRemoto.sort((a, b) => b.count - a.count)
+
+  cachedCities = citiesWithoutRemoto
   cacheTs = now
 
-  return NextResponse.json(buildResponse(allCities, minCount))
+  return NextResponse.json(buildResponse(citiesWithoutRemoto, minCount))
 }
 
 function buildResponse(cities: CityEntry[], minCount: number) {
