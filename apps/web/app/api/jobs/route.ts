@@ -143,6 +143,46 @@ function formatSalary(min: number | null, max: number | null): string | null {
   return `até ${fmt(max!)}`
 }
 
+// ─── Mandatory area allow-list ────────────────────────────────────────────────
+// Every query is pre-filtered to these 8 areas. Jobs outside scope
+// (logistics workers, nurses, retail staff, etc.) never reach the feed.
+// Built once at module load; applied as .or() before all optional filters.
+
+const ALLOWED_AREAS_KEYWORDS: string[] = [
+  // Tecnologia
+  'developer', 'desenvolvedor', 'engineer', 'engenheir', 'software',
+  'backend', 'frontend', 'fullstack', 'full-stack', 'devops', 'sre',
+  'qa', 'tester', 'mobile', 'ios', 'android', 'tech lead',
+  'arquiteto', 'architect', 'programador', 'cloud', 'infrastructure',
+  'infra', 'cybersecurity', 'security', 'platform',
+  // Dados
+  'data', 'dados', 'analytics', 'analista de dados', 'cientista',
+  'scientist', 'machine learning', 'ml engineer', 'business intelligence',
+  'data engineer', 'data analyst', 'analytics engineer', 'dba',
+  // Produto
+  'product manager', 'gerente de produto', 'product owner',
+  'product designer', 'product ops', 'produto',
+  // Growth
+  'growth',
+  // Marketing
+  'marketing', 'mídia', 'paid media', 'seo', 'conteúdo',
+  'social media', 'aquisição', 'aquisicao',
+  // Design
+  'designer', 'product design', 'visual design', 'design gráfico', 'motion',
+  // Financeiro
+  'financ', 'finance', 'fp&a', 'fpa', 'controller', 'controladoria',
+  'tesouraria', 'treasury', 'contabil', 'contábil', 'accounting',
+  'fiscal', 'tributar',
+  // Operações
+  'operations', 'operações', 'operacoes', 'logística', 'logistica',
+  'supply chain', 'business ops', 'revenue ops', 'bizops',
+]
+
+// Pre-built at module load — not rebuilt on every request
+const MANDATORY_CLAUSE = ALLOWED_AREAS_KEYWORDS
+  .map((k) => `title.ilike.%${k}%`)
+  .join(',')
+
 // ─── Filter keyword maps (title-based inference for Supabase ilike) ──────────
 
 const AREA_PATTERNS: Record<Area, string[]> = {
@@ -182,7 +222,11 @@ export async function GET(request: Request) {
   )
 
   // eslint-disable-next-line prefer-const
-  let query = supabase.from('scraped_jobs').select('*').order('posted_at', { ascending: false })
+  let query = supabase
+    .from('scraped_jobs')
+    .select('*', { count: 'exact' })
+    .order('posted_at', { ascending: false })
+    .or(MANDATORY_CLAUSE)
 
   if (search) {
     // Search across title and company
@@ -213,11 +257,13 @@ export async function GET(request: Request) {
     }
   }
 
-  const { data, error } = await query.range(offset, offset + PAGE_SIZE - 1)
+  const { data, error, count } = await query.range(offset, offset + PAGE_SIZE - 1)
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
+
+  console.log(`[jobs/route] mandatory filter: ${count ?? '?'} total matching | page ${data?.length ?? 0} rows @ offset ${offset}`)
 
   const jobs: Job[] = (data ?? []).map((row) => {
     const slug = (row.company ?? '').toLowerCase().replace(/\s+/g, '')

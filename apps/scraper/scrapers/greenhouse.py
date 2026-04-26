@@ -8,11 +8,18 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-COMPANIES = [
+# Each entry is a board slug string, or (board_slug, company_name) tuple
+# when multiple boards map to the same canonical company.
+COMPANIES: list[str | tuple[str, str]] = [
     'nubank', 'wildlifestudios', 'cloudwalk', 'neon', 'caju',
     'flash', 'alice', 'dock', 'unico', 'ciandt',
     # Confirmed working via boards-api.greenhouse.io (HTTP 200)
     'xpinc', 'c6bank', 'picpay', 'quintoandar', 'vtex', 'inter', 'stone',
+    # mlabs (Luizalabs/Magazine Luiza tech): board active, 0 jobs currently — will self-populate when open
+    'mlabs',
+    # Hotmart: 3 regional Greenhouse boards (BR primary, EN secondary, ESP skipped — Madrid only)
+    ('hotmartcareersbr', 'hotmart'),
+    ('hotmartcareersen', 'hotmart'),
 ]
 
 
@@ -29,7 +36,8 @@ def scrape_greenhouse() -> int:
     supabase: Client = create_client(os.environ['SUPABASE_URL'], os.environ['SUPABASE_KEY'])
     new_count = 0
 
-    for slug in COMPANIES:
+    for entry in COMPANIES:
+        slug, company = (entry, entry) if isinstance(entry, str) else entry
         # ── 1. Fetch from Greenhouse (public API, no auth needed) ─────────────
         api_url = f'https://boards-api.greenhouse.io/v1/boards/{slug}/jobs'
         try:
@@ -64,7 +72,7 @@ def scrape_greenhouse() -> int:
                 record = {
                     'id': job_id,
                     'title': (job.get('title') or '').strip(),
-                    'company': slug,
+                    'company': company,
                     'location': location_name,
                     'url': job.get('absolute_url') or '',
                     'employment_type': _parse_work_model(location_name),

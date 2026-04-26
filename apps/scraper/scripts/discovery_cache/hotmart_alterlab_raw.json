@@ -1,0 +1,393 @@
+{
+  "job_id": "d6610756-f903-45f6-800c-83a97d1ed601",
+  "url": "https://hotmart.com/en/jobs/positions",
+  "status_code": 200,
+  "content": {
+    "text": "Find your job | Jobs\n\n Search for a new job opportunity Filters\n Amsterdam, The Netherlands\n\n Belo Horizonte, Brazil\n\n São Paulo, Brazil\n\n Bogota, Colombia\n\n Mexico City, Mexico\n\n New York, USA\n\n New York, USA - Remote\n\n Paris, France\n\n Madrid, Spain\n\n Sydney, Australia\n\n Belo Horizonte, Brazil\n\n Manila, Philippines\n\n São Paulo, Brazil\n\n São Paulo, Brazil\n Sorry!We couldn't find any open positions. HomeJobsPositions",
+    "html": "",
+    "json": {
+      "title": "Find your job | Jobs",
+      "paragraphs": [
+        "Hotmart — 2011-2022 © All rights reserved"
+      ],
+      "headings": [
+        {
+          "level": 1,
+          "text": "Search for a new job opportunity"
+        },
+        {
+          "level": 6,
+          "text": "The Company"
+        },
+        {
+          "level": 6,
+          "text": "Using Hotmart"
+        },
+        {
+          "level": 6,
+          "text": "Education"
+        }
+      ],
+      "links": [
+        {
+          "text": "Culture & Pillars",
+          "url": "https://hotmart.com/en/jobs/culture"
+        },
+        {
+          "text": "Find my job",
+          "url": "https://hotmart.com/en/jobs/positions"
+        },
+        {
+          "text": "Access my purchases",
+          "url": "https://consumer.hotmart.com/"
+        },
+        {
+          "text": "Manage my business",
+          "url": "https://sso.hotmart.com/login?systemOrigin=app-hotmart&service=https://app.hotmart.com/"
+        },
+        {
+          "text": "Sign up",
+          "url": "https://sso.hotmart.com/signup?systemOrigin=app-hotmart&service=https://app.hotmart.com/"
+        },
+        {
+          "text": "Sign up",
+          "url": "https://sso.hotmart.com/signup?systemOrigin=app-hotmart&service=https://app.hotmart.com/"
+        },
+        {
+          "text": "Culture & Pillars",
+          "url": "https://hotmart.com/en/jobs/culture"
+        },
+        {
+          "text": "Find my job",
+          "url": "https://hotmart.com/en/jobs/positions"
+        },
+        {
+          "text": "Sign up",
+          "url": "https://sso.hotmart.com/signup?systemOrigin=app-hotmart&service=https://app.hotmart.com/"
+        },
+        {
+          "text": "Access my purchases",
+          "url": "https://consumer.hotmart.com/"
+        },
+        {
+          "text": "Manage my business",
+          "url": "https://sso.hotmart.com/login?systemOrigin=app-hotmart&service=https://app.hotmart.com/"
+        },
+        {
+          "text": "Home",
+          "url": "https://hotmart.com/en"
+        },
+        {
+          "text": "Jobs",
+          "url": "https://hotmart.com/en/jobs"
+        },
+        {
+          "text": "About Hotmart",
+          "url": "https://hotmart.com/en/about"
+        },
+        {
+          "text": "Careers",
+          "url": "https://hotmart.com/en/jobs"
+        },
+        {
+          "text": "Media Center",
+          "url": "https://press.hotmart.com/en"
+        },
+        {
+          "text": "Sustainability (ESG)",
+          "url": "https://esg.hotmart.com/esgpractices"
+        },
+        {
+          "text": "Features",
+          "url": "https://hotmart.com/en/solutions"
+        },
+        {
+          "text": "In the loop",
+          "url": "https://hotmart.com/en/changelog"
+        },
+        {
+          "text": "What's Included?",
+          "url": "https://hotmart.com/en/pricing"
+        },
+        {
+          "text": "Help Center",
+          "url": "https://help.hotmart.com/en"
+        },
+        {
+          "text": "Hotmart App",
+          "url": "https://hotmart.com/en/hotmart-app"
+        },
+        {
+          "text": "Hotmart Developers",
+          "url": "https://developers.hotmart.com/docs/en/"
+        },
+        {
+          "text": "Terms and Policies",
+          "url": "https://hotmart.com/en/legal"
+        },
+        {
+          "text": "Help Center Videos",
+          "url": "https://youtube.com/hotmarthelpcenter"
+        },
+        {
+          "text": "Hotmart Guider",
+          "url": "https://guide.hotmart.com/"
+        },
+        {
+          "text": "Blog",
+          "url": "https://hotmart.com/en/blog"
+        },
+        {
+          "text": "Português - Brasil",
+          "url": "https://hotmart.com/pt-br/trabalhe-conosco/vagas"
+        },
+        {
+          "text": "English",
+          "url": "https://hotmart.com/en/jobs/positions"
+        },
+        {
+          "text": "Español",
+          "url": "https://hotmart.com/es/trabaja-con-nosotros/ofertas"
+        },
+        {
+          "text": "Terms and Policies",
+          "url": "https://hotmart.com/en/legal"
+        },
+        {
+          "text": "Ethics Line",
+          "url": "https://ethicsline.hotmart.co/"
+        }
+      ],
+      "images": [
+        {
+          "url": "https://hotmart.com/static/app-hotmart-jobs/images/hotmart-new-logo.svg",
+          "alt": "Hotmart"
+        },
+        {
+          "url": "https://hotmart.com/static/app-hotmart-jobs/images/logo-hotmart-company.svg",
+          "alt": "Hotmart Company"
+        }
+      ],
+      "lists": [
+        {
+          "type": "unordered",
+          "items": [
+            "Culture & Pillars",
+            "Find my job"
+          ]
+        },
+        {
+          "type": "unordered",
+          "items": [
+            "About Hotmart",
+            "Careers",
+            "Media Center",
+            "Sustainability (ESG)"
+          ]
+        },
+        {
+          "type": "unordered",
+          "items": [
+            "Features",
+            "In the loop",
+            "What's Included?",
+            "Help Center",
+            "Hotmart App",
+            "Hotmart Developers",
+            "Terms and Policies"
+          ]
+        },
+        {
+          "type": "unordered",
+          "items": [
+            "Help Center Videos",
+            "Hotmart Guider",
+            "Blog"
+          ]
+        },
+        {
+          "type": "unordered",
+          "items": [
+            "Terms and Policies",
+            "Ethics Line"
+          ]
+        }
+      ],
+      "metadata": {
+        "original_url": "https://hotmart.com/en/jobs/positions",
+        "final_url": "https://hotmart.com/en/jobs/positions",
+        "status_code": null,
+        "content_type": "text/html",
+        "extraction_timestamp": "2026-04-26T13:46:23.453109",
+        "language": "en",
+        "canonical": "https://hotmart.com/en/jobs/positions",
+        "og_tags": {
+          "type": "website",
+          "title": "Find your job | Jobs",
+          "description": "At Hotmart, teams work in collaboration, learning and growing together. Discover the company's areas and find the job opportunity that best suits you! - Career Programs | Job Openings",
+          "image": "https://hotmart.com/static/app-hotmart-jobs/images/share--facebook.png",
+          "site_name": "Find your job | Jobs",
+          "locale": "en",
+          "url": "https://hotmart.com/en/jobs/positions"
+        },
+        "twitter_tags": {
+          "card": "summary",
+          "site": "@hotmart",
+          "creator": "@hotmart",
+          "url": "https://hotmart.com/en/jobs/positions",
+          "title": "Find your job | Jobs",
+          "description": "At Hotmart, teams work in collaboration, learning and growing together. Discover the company's areas and find the job opportunity that best suits you! - Career Programs | Job Openings",
+          "image": "https://hotmart.com/static/app-hotmart-jobs/images/share--twitter.png"
+        },
+        "schema": {
+          "type": "BreadcrumbList",
+          "data": {
+            "@context": "https://schema.org",
+            "@type": "BreadcrumbList",
+            "itemListElement": [
+              {
+                "@type": "ListItem",
+                "position": 0,
+                "item": {
+                  "@id": "https://hotmart.com/en",
+                  "name": "Home"
+                }
+              },
+              {
+                "@type": "ListItem",
+                "position": 1,
+                "item": {
+                  "@id": "https://hotmart.com/en/jobs",
+                  "name": "Jobs"
+                }
+              },
+              {
+                "@type": "ListItem",
+                "position": 2,
+                "item": {
+                  "@id": "https://hotmart.com/en/jobs/positions",
+                  "name": "Positions"
+                }
+              }
+            ]
+          },
+          "schemas": [
+            {
+              "type": "BreadcrumbList",
+              "data": {
+                "@context": "https://schema.org",
+                "@type": "BreadcrumbList",
+                "itemListElement": [
+                  {
+                    "@type": "ListItem",
+                    "position": 0,
+                    "item": {
+                      "@id": "https://hotmart.com/en",
+                      "name": "Home"
+                    }
+                  },
+                  {
+                    "@type": "ListItem",
+                    "position": 1,
+                    "item": {
+                      "@id": "https://hotmart.com/en/jobs",
+                      "name": "Jobs"
+                    }
+                  },
+                  {
+                    "@type": "ListItem",
+                    "position": 2,
+                    "item": {
+                      "@id": "https://hotmart.com/en/jobs/positions",
+                      "name": "Positions"
+                    }
+                  }
+                ]
+              },
+              "source": "json_ld"
+            },
+            {
+              "type": "WebSite",
+              "data": {
+                "@context": "https://schema.org",
+                "@type": "WebSite",
+                "url": "https://hotmart.com/",
+                "potentialAction": {
+                  "@type": "SearchAction",
+                  "target": "https://hotmart.com/s?q={search_term_string}&amp;sck=HOTMART_SITE&amp;src=GOOGLE_SEARCH",
+                  "query-input": "required name=search_term_string"
+                }
+              },
+              "source": "json_ld"
+            }
+          ],
+          "format": "json_ld"
+        },
+        "title": "Find your job | Jobs",
+        "meta_description": "At Hotmart, teams work in collaboration, learning and growing together. Discover the company's areas and find the job opportunity that best suits you! - Career Programs | Job Openings",
+        "keywords": [],
+        "modified_at": null,
+        "images": [
+          {
+            "url": "https://hotmart.com/static/app-hotmart-jobs/images/hotmart-new-logo.svg",
+            "alt": "Hotmart",
+            "width": "128",
+            "height": "36"
+          },
+          {
+            "url": "https://hotmart.com/static/app-hotmart-jobs/images/logo-hotmart-company.svg",
+            "alt": "Hotmart Company"
+          }
+        ],
+        "charset": "utf-8",
+        "viewport": "width=device-width, initial-scale=1",
+        "generator": null
+      },
+      "_extraction_method": "algorithmic"
+    },
+    "json_v2": {},
+    "markdown": ""
+  },
+  "title": null,
+  "published_at": null,
+  "author": null,
+  "metadata": {},
+  "headers": {},
+  "cached": false,
+  "cached_at": null,
+  "expires_at": null,
+  "stale_cache": false,
+  "response_time_ms": 4815,
+  "size_bytes": 0,
+  "structured_content": null,
+  "structured_sections": null,
+  "raw_html": null,
+  "warning": null,
+  "content_quality": null,
+  "screenshot_url": null,
+  "pdf_url": null,
+  "ocr_results": null,
+  "proxy_used": null,
+  "filtered_content": null,
+  "extraction_result": null,
+  "billing": {
+    "total_credits": 300,
+    "tier_used": "2",
+    "escalations": [],
+    "savings": 19700,
+    "optimization_suggestion": null,
+    "byop_applied": false,
+    "byop_discount_percent": null,
+    "original_cost_microcents": null,
+    "final_cost_microcents": 300,
+    "byos_applied": false,
+    "byos_session_name": null
+  },
+  "extraction_method": "algorithmic",
+  "method_details": null,
+  "version": "v1",
+  "is_gated": false,
+  "extraction_completeness": null,
+  "extraction_note": null,
+  "note": null
+}

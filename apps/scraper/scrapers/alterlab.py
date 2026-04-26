@@ -24,13 +24,14 @@ ALTERLAB_URL = 'https://api.alterlab.io/api/v1/scrape'
 # type drives which parser is attempted first
 COMPANIES: dict[str, dict] = {
     # All are SPAs with no public API — require JS rendering
-    'ifood':      {'url': 'https://carreiras.ifood.com.br',                     'type': 'custom',     'render_js': True, 'formats': ['html']},
+    'ifood':         {'url': 'https://carreiras.ifood.com.br',                  'type': 'custom',     'render_js': True, 'formats': ['html']},
     # stone moved to greenhouse.py (boards-api.greenhouse.io/v1/boards/stone → 459 jobs)
     # loggi removed — no open positions
-    'creditas':   {'url': 'https://creditas.gupy.io',                           'type': 'gupy_board', 'render_js': True},
-    'hotmart':    {'url': 'https://hotmart.com/en/jobs',                        'type': 'custom',     'render_js': True},
-    # hotmart_br removed — jobs load async and aren't present in rendered HTML; no public API
-    'dtidigital': {'url': 'https://www.dtidigital.com.br/carreiras',            'type': 'custom',     'render_js': True, 'formats': ['html']},
+    'creditas':      {'url': 'https://creditas.gupy.io',                        'type': 'gupy_board', 'render_js': True},
+    # hotmart moved to greenhouse.py (boards: hotmartcareersbr + hotmartcareersen)
+    'dtidigital':    {'url': 'https://www.dtidigital.com.br/carreiras',         'type': 'custom',     'render_js': True, 'formats': ['html']},
+    # Eightfold AI portal — /api/apply/v2/jobs requires server-side key (403); scraping careers page
+    'mercadolivre':  {'url': 'https://mercadolibre.eightfold.ai/careers?la=pt', 'type': 'custom',     'render_js': True, 'formats': ['html']},
 }
 
 
@@ -314,19 +315,29 @@ def _parse_ifood_html(raw_html: str) -> list[dict]:
     return jobs
 
 
-def _parse_hotmart_br(raw_html: str) -> list[dict]:
+def _parse_mercadolivre(raw_html: str) -> list[dict]:
     """
-    Parses Hotmart PT-BR careers page HTML.
-    Targets <p class="hot-position-card__job"> for title and
-    <a href="/pt-br/trabalhe-conosco/vagas/{id}/{slug}"> for URL.
+    Parses Eightfold AI careers page for Mercado Livre.
+    Eightfold renders ~10 job cards per page (client-side infinite scroll).
+    Card structure:
+      <div class="cardContainer-*" data-test-id="job-listing">
+        <a href="/careers/job/{id}?la=pt">
+          <div class="title-*">JOB TITLE</div>
+          <div class="fieldValue-*">LOCATION</div>   (first = location, second = dept)
     """
     soup = BeautifulSoup(raw_html, 'html.parser')
     jobs = []
     seen_ids: set[str] = set()
 
-    for a_tag in soup.find_all('a', href=re.compile(r'/pt-br/trabalhe-conosco/vagas/\d+')):
+    BASE = 'https://mercadolibre.eightfold.ai'
+
+    for card in soup.find_all(attrs={'data-test-id': 'job-listing'}):
+        a_tag = card.find('a', href=re.compile(r'/careers/job/(\d+)'))
+        if not a_tag:
+            continue
+
         href = a_tag.get('href', '')
-        m = re.search(r'/vagas/(\d+)', href)
+        m = re.search(r'/careers/job/(\d+)', href)
         if not m:
             continue
         job_id = m.group(1)
@@ -334,18 +345,39 @@ def _parse_hotmart_br(raw_html: str) -> list[dict]:
             continue
         seen_ids.add(job_id)
 
-        p_tag = a_tag.find('p', class_=re.compile(r'hot-position-card__job'))
-        title = p_tag.get_text(strip=True) if p_tag else a_tag.get_text(strip=True)
-        if not title:
+        # Title: div with class containing 'title-'
+        title_el = a_tag.find('div', class_=re.compile(r'\btitle-'))
+        if title_el:
+            title = title_el.get_text(strip=True)
+        else:
+            # Fallback: aria-label on the anchor "View job: {title}"
+            aria = a_tag.get('aria-label', '')
+            title = aria.replace('View job:', '').strip() if aria else ''
+
+        if not title or len(title) < 5:
             continue
 
+        # Location: first div with class containing 'fieldValue-'
+        field_vals = a_tag.find_all('div', class_=re.compile(r'\bfieldValue-'))
+        location = field_vals[0].get_text(strip=True) if field_vals else ''
+
+        # Work model: check for hybrid/remote pill text
+        work_model = _work_model(location)
+        pills_text = ' '.join(p.get_text(strip=True) for p in a_tag.find_all(class_=re.compile(r'pills-module_label')))
+        if 'hybrid' in pills_text.lower() or 'híbrid' in pills_text.lower():
+            work_model = 'híbrido'
+        elif 'remote' in pills_text.lower() or 'remot' in pills_text.lower():
+            work_model = 'remoto'
+
+        full_url = BASE + href if href.startswith('/') else href
+
         jobs.append({
-            'id': f'alterlab-hotmart_br-{job_id}',
+            'id': f'alterlab-mercadolivre-{job_id}',
             'title': title,
-            'company': 'hotmart',
-            'location': '',
-            'url': f'https://hotmart.com{href}',
-            'employment_type': 'presencial',
+            'company': 'mercadolivre',
+            'location': location,
+            'url': full_url,
+            'employment_type': work_model,
             'salary_min': None,
             'salary_max': None,
             'posted_at': None,
@@ -600,6 +632,11 @@ def _extract_jobs(slug: str, company_type: str, source_url: str, response: dict)
         if jobs:
             logger.debug(f'[alterlab] dtidigital HTML parser → {len(jobs)} vagas')
             return jobs
+
+    if slug == 'mercadolivre' and raw_html:
+        jobs = _parse_mercadolivre(raw_html)
+        logger.debug(f'[alterlab] mercadolivre HTML parser → {len(jobs)} vagas (Eightfold: 10/page)')
+        return jobs
 
     # 1. Try the typed parser first
     if payload is not None:

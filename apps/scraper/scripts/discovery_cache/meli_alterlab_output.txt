@@ -1,0 +1,55 @@
+DEBUG Starting new HTTPS connection (1): api.alterlab.io:443
+DEBUG https://api.alterlab.io:443 "POST /api/v1/scrape HTTP/1.1" 200 217644
+
+============================================================
+Company : mercadolivre
+URL     : https://mercadolibre.eightfold.ai/careers?la=pt
+Type    : custom
+JS      : True  |  Formats: ['html']
+============================================================
+
+Calling AlterLab API...
+Raw response saved to mercadolivre_alterlab_raw.json
+
+--- RESPONSE KEYS ---
+  job_id: str (36 chars) — '7e46661a-293f-4960-9d3a-a8d35d9e0ff3'
+  url: str (47 chars) — 'https://mercadolibre.eightfold.ai/careers?la=pt'
+  status_code: int = 200
+  content: dict with keys ['text', 'html', 'json', 'json_v2', 'markdown']
+  title: NoneType = None
+  published_at: NoneType = None
+  author: NoneType = None
+  metadata: dict with keys []
+  headers: dict with keys []
+  cached: bool = False
+  cached_at: NoneType = None
+  expires_at: NoneType = None
+  stale_cache: bool = False
+  response_time_ms: int = 13270
+  size_bytes: int = 1929647
+  structured_content: NoneType = None
+  structured_sections: NoneType = None
+  raw_html: NoneType = None
+  warning: NoneType = None
+  content_quality: NoneType = None
+  screenshot_url: NoneType = None
+  pdf_url: NoneType = None
+  ocr_results: NoneType = None
+  proxy_used: NoneType = None
+  filtered_content: NoneType = None
+  extraction_result: NoneType = None
+  billing: dict with keys ['total_credits', 'tier_used', 'escalations', 'savings', 'optimization_suggestion', 'byop_applied', 'byop_discount_percent', 'original_cost_microcents', 'final_cost_microcents', 'byos_applied', 'byos_session_name']
+  extraction_method: str (11 chars) — 'algorithmic'
+  method_details: NoneType = None
+  version: str (2 chars) — 'v1'
+  is_gated: bool = False
+  extraction_completeness: NoneType = None
+  extraction_note: NoneType = None
+  note: NoneType = None
+
+--- EXTRACTING JOBS ---
+
+Extracted: 0 jobs
+
+
+Full output saved to mercadolivre_alterlab_output.txt

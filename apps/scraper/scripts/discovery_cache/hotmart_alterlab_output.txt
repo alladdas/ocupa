@@ -1,0 +1,8 @@
+Company: hotmart
+URL: https://hotmart.com/en/jobs/positions
+Total jobs: 4
+
+[001] Search for a new job opportunity |  | https://hotmart.com/en/jobs/positions
+[002] The Company |  | https://hotmart.com/en/jobs/positions
+[003] Using Hotmart |  | https://hotmart.com/en/jobs/positions
+[004] Education |  | https://hotmart.com/en/jobs/positions

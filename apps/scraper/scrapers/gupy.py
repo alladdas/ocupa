@@ -19,13 +19,14 @@ logger = logging.getLogger(__name__)
 BASE_URL = 'https://employability-portal.gupy.io/api/v1/jobs'
 
 # Empresas confirmadas no portal público do Gupy (companyId → nome de exibição)
-# Para adicionar mais: buscar em https://employability-portal.gupy.io/api/v1/companies?limit=100&offset=N
+# Para descobrir companyId de novos slugs: python scripts/discover_company_ids.py {slug}
 COMPANIES: dict[int, str] = {
     119:  'ambev',
     246:  'renner',
     295:  'boticario',
     316:  'vivo',
     487:  'dasa',
+    2022: 'itau',
 }
 
 WORKPLACE_MAP = {
