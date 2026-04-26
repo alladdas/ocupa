@@ -4,6 +4,8 @@ export const revalidate = 0
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import type { Job, WorkModel, Seniority, Area } from '@/lib/mock-data'
+import { stripAccents } from '@/lib/normalize-city'
+import { MANDATORY_CLAUSE } from '@/lib/jobs-filter'
 
 // ─── Company slug → clearbit domain ──────────────────────────────────────────
 // Gupy companies confirmed on public portal: ambev, renner, boticario, vivo, dasa
@@ -143,46 +145,6 @@ function formatSalary(min: number | null, max: number | null): string | null {
   return `até ${fmt(max!)}`
 }
 
-// ─── Mandatory area allow-list ────────────────────────────────────────────────
-// Every query is pre-filtered to these 8 areas. Jobs outside scope
-// (logistics workers, nurses, retail staff, etc.) never reach the feed.
-// Built once at module load; applied as .or() before all optional filters.
-
-const ALLOWED_AREAS_KEYWORDS: string[] = [
-  // Tecnologia
-  'developer', 'desenvolvedor', 'engineer', 'engenheir', 'software',
-  'backend', 'frontend', 'fullstack', 'full-stack', 'devops', 'sre',
-  'qa', 'tester', 'mobile', 'ios', 'android', 'tech lead',
-  'arquiteto', 'architect', 'programador', 'cloud', 'infrastructure',
-  'infra', 'cybersecurity', 'security', 'platform',
-  // Dados
-  'data', 'dados', 'analytics', 'analista de dados', 'cientista',
-  'scientist', 'machine learning', 'ml engineer', 'business intelligence',
-  'data engineer', 'data analyst', 'analytics engineer', 'dba',
-  // Produto
-  'product manager', 'gerente de produto', 'product owner',
-  'product designer', 'product ops', 'produto',
-  // Growth
-  'growth',
-  // Marketing
-  'marketing', 'mídia', 'paid media', 'seo', 'conteúdo',
-  'social media', 'aquisição', 'aquisicao',
-  // Design
-  'designer', 'product design', 'visual design', 'design gráfico', 'motion',
-  // Financeiro
-  'financ', 'finance', 'fp&a', 'fpa', 'controller', 'controladoria',
-  'tesouraria', 'treasury', 'contabil', 'contábil', 'accounting',
-  'fiscal', 'tributar',
-  // Operações
-  'operations', 'operações', 'operacoes', 'logística', 'logistica',
-  'supply chain', 'business ops', 'revenue ops', 'bizops',
-]
-
-// Pre-built at module load — not rebuilt on every request
-const MANDATORY_CLAUSE = ALLOWED_AREAS_KEYWORDS
-  .map((k) => `title.ilike.%${k}%`)
-  .join(',')
-
 // ─── Filter keyword maps (title-based inference for Supabase ilike) ──────────
 
 const AREA_PATTERNS: Record<Area, string[]> = {
@@ -238,7 +200,17 @@ export async function GET(request: Request) {
   }
 
   if (location) {
-    query = query.ilike('location', `%${location}%`) as typeof query
+    if (location === 'Remoto') {
+      // Match all remote variants in the location column
+      query = query.or('location.ilike.%Remoto%,location.ilike.%Remote%') as typeof query
+    } else {
+      // Also match accent-stripped variant so "São Paulo" catches "Sao Paulo" entries
+      const bare = stripAccents(location)
+      const patterns = bare !== location
+        ? `location.ilike.%${location}%,location.ilike.%${bare}%`
+        : `location.ilike.%${location}%`
+      query = query.or(patterns) as typeof query
+    }
   }
 
   if (areas.length > 0) {
