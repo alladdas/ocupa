@@ -1,22 +1,31 @@
 'use client'
 
-import { Search, X, RefreshCw } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Search, X, RefreshCw, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { stripAccents } from '@/lib/normalize-city'
 import {
   AREAS,
   SENIORITIES,
   WORK_MODELS,
-  LOCATIONS,
   type Area,
   type Seniority,
   type WorkModel,
 } from '@/lib/mock-data'
 import type { Filters } from '@/components/JobFilters'
 
+interface CityItem {
+  name: string
+  count: number
+}
+
 interface FilterSidebarProps {
   filters: Filters
   onChange: (f: Filters) => void
 }
+
+const INITIAL_SHOW = 8
+const SEARCH_THRESHOLD = 15
 
 function Chip({
   active,
@@ -33,10 +42,8 @@ function Chip({
       className={cn(
         'rounded-md border px-2.5 py-1 text-xs font-medium transition-all',
         active
-          ? // Active: accent colors from CSS vars
-            'border-[var(--d-accent-border)] bg-[var(--d-accent-subtle)] text-[var(--d-accent-text)]'
-          : // Inactive: visible in both light and dark
-            'border-[var(--d-border)] bg-transparent text-[var(--d-text-2)] hover:bg-[var(--d-surface)]'
+          ? 'border-[var(--d-accent-border)] bg-[var(--d-accent-subtle)] text-[var(--d-accent-text)]'
+          : 'border-[var(--d-border)] bg-transparent text-[var(--d-text-2)] hover:bg-[var(--d-surface)]'
       )}
     >
       {children}
@@ -45,6 +52,21 @@ function Chip({
 }
 
 export default function FilterSidebar({ filters, onChange }: FilterSidebarProps) {
+  const [cities, setCities] = useState<CityItem[]>([])
+  const [loadingCities, setLoadingCities] = useState(true)
+  const [showAllCities, setShowAllCities] = useState(false)
+  const [citySearch, setCitySearch] = useState('')
+
+  useEffect(() => {
+    fetch('/api/locations')
+      .then(r => r.json())
+      .then(data => {
+        setCities(data.cities ?? [])
+        setLoadingCities(false)
+      })
+      .catch(() => setLoadingCities(false))
+  }, [])
+
   const toggle = <T extends string>(key: keyof Filters, value: T) => {
     const current = filters[key] as T[]
     const next = current.includes(value)
@@ -62,6 +84,17 @@ export default function FilterSidebar({ filters, onChange }: FilterSidebarProps)
     filters.workModels.length > 0 ||
     filters.location !== '' ||
     filters.search !== ''
+
+  // City list filtering (only active when expanded)
+  const filteredCities = showAllCities && citySearch
+    ? cities.filter(c =>
+        stripAccents(c.name.toLowerCase()).includes(stripAccents(citySearch.toLowerCase()))
+      )
+    : cities
+
+  const visibleCities = showAllCities ? filteredCities : cities.slice(0, INITIAL_SHOW)
+  const hiddenCount = cities.length - INITIAL_SHOW
+  const showSearchInput = showAllCities && cities.length > SEARCH_THRESHOLD
 
   return (
     <aside
@@ -193,19 +226,74 @@ export default function FilterSidebar({ filters, onChange }: FilterSidebarProps)
           >
             Local
           </span>
+
+          {/* Search input (visible only when expanded and cities > threshold) */}
+          {showSearchInput && (
+            <div className="relative">
+              <Search
+                className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2"
+                style={{ color: 'var(--d-muted)' }}
+              />
+              <input
+                type="text"
+                placeholder="Buscar cidade..."
+                value={citySearch}
+                onChange={e => setCitySearch(e.target.value)}
+                className="w-full rounded border py-1 pl-6 pr-2 text-xs outline-none focus:border-[var(--d-accent)]"
+                style={{
+                  background: 'var(--d-bg)',
+                  borderColor: 'var(--d-border)',
+                  color: 'var(--d-text)',
+                }}
+              />
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-1.5">
-            {LOCATIONS.map((loc) => (
-              <Chip
-                key={loc}
-                active={filters.location === loc}
-                onClick={() =>
-                  onChange({ ...filters, location: filters.location === loc ? '' : loc })
-                }
-              >
-                {loc}
-              </Chip>
-            ))}
+            {loadingCities ? (
+              // Skeleton placeholders
+              [60, 80, 50, 70].map(w => (
+                <div
+                  key={w}
+                  className="h-6 animate-pulse rounded-md"
+                  style={{ width: w, background: 'var(--d-surface)' }}
+                />
+              ))
+            ) : (
+              visibleCities.map(city => (
+                <Chip
+                  key={city.name}
+                  active={filters.location === city.name}
+                  onClick={() =>
+                    onChange({
+                      ...filters,
+                      location: filters.location === city.name ? '' : city.name,
+                    })
+                  }
+                >
+                  {city.name}{' '}
+                  <span
+                    className="text-[10px]"
+                    style={{ color: 'var(--d-muted)' }}
+                  >
+                    ({city.count})
+                  </span>
+                </Chip>
+              ))
+            )}
           </div>
+
+          {/* Expand / collapse */}
+          {!loadingCities && !showAllCities && hiddenCount > 0 && (
+            <button
+              onClick={() => setShowAllCities(true)}
+              className="flex items-center gap-1 self-start text-[11px] transition-colors hover:opacity-80"
+              style={{ color: 'var(--d-muted)' }}
+            >
+              <ChevronDown className="h-3 w-3" />
+              Ver mais (+{hiddenCount} cidades)
+            </button>
+          )}
         </div>
       </div>
 
