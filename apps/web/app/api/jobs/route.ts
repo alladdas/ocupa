@@ -57,6 +57,9 @@ const DOMAIN_MAP: Record<string, string> = {
   rededeaor: 'rededeaor.com.br',
   amazon: 'amazon.com.br',
   dtidigital: 'dtidigital.com.br',
+  brex: 'brex.com',
+  figma: 'figma.com',
+  vercel: 'vercel.com',
 }
 
 // ─── Company slug → display name ─────────────────────────────────────────────
@@ -79,6 +82,9 @@ const NAME_MAP: Record<string, string> = {
   hotmart: 'Hotmart',
   rdstation: 'RD Station',
   gympass: 'Gympass',
+  brex: 'Brex',
+  figma: 'Figma',
+  vercel: 'Vercel',
   loggi: 'Loggi',
   '99app': '99',
   kavak: 'Kavak',

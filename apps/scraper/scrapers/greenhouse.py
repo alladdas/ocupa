@@ -20,6 +20,10 @@ COMPANIES: list[str | tuple[str, str]] = [
     # Hotmart: 3 regional Greenhouse boards (BR primary, EN secondary, ESP skipped — Madrid only)
     ('hotmartcareersbr', 'hotmart'),
     ('hotmartcareersen', 'hotmart'),
+    # Internacionais que contratam BR remoto (confirmed 50+ jobs, 2026-04-26)
+    'brex', 'figma', 'vercel',
+    # Gympass rebranded to Wellhub but board slug unchanged
+    'gympass',
 ]
 
 
