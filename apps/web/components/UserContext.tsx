@@ -72,26 +72,31 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const supabase = getSupabaseBrowser()
 
-    async function fetchAndSetUser(supabaseUser: User) {
-      const { data } = await supabase
+    // Enrich with is_pro from profiles table in the background.
+    // setUser is already called with isPro=false before this runs.
+    function enrichWithProfile(supabaseUser: User) {
+      supabase
         .from('profiles')
         .select('is_pro')
         .eq('id', supabaseUser.id)
         .single()
-      setUser(deriveFromSupabase(supabaseUser, data?.is_pro ?? false))
+        .then(({ data }: { data: { is_pro: boolean } | null }) => {
+          if (data?.is_pro) {
+            setUser(prev => prev ? { ...prev, isPro: true } : prev)
+          }
+        })
+        .catch(() => {/* profiles table missing or RLS blocked — isPro stays false */})
     }
 
-    ;(async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session?.user) await fetchAndSetUser(session.user)
-      setLoading(false)
-    })()
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_: AuthChangeEvent, session: Session | null) => {
-        if (session?.user) {
-          await fetchAndSetUser(session.user)
-        } else {
+      (event: AuthChangeEvent, session: Session | null) => {
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+          if (session?.user) {
+            // Set user immediately from auth data — no awaiting a DB query
+            setUser(deriveFromSupabase(session.user, false))
+            enrichWithProfile(session.user)
+          }
+        } else if (event === 'SIGNED_OUT') {
           setUser(null)
         }
         setLoading(false)
