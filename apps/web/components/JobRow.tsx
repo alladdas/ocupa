@@ -1,12 +1,14 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Lock, Share2, EyeOff, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react'
 import { cn, getCompanyColor, getCompanyInitials } from '@/lib/utils'
 import FreshBadge from '@/components/FreshBadge'
 import { useAuthModal } from '@/components/AuthModalContext'
 import { useUser } from '@/components/UserContext'
 import { useUpgradeModal } from '@/components/UpgradeModalContext'
+import ApplyProgressModal from '@/components/ApplyProgressModal'
 import type { Job } from '@/lib/mock-data'
 
 interface JobRowProps {
@@ -78,15 +80,25 @@ function sanitizeHtml(html: string): string {
 
 export default function JobRow({ job, onHide }: JobRowProps) {
   const [expanded, setExpanded] = useState(false)
+  const [applyModalOpen, setApplyModalOpen] = useState(false)
   const { openAuthModal } = useAuthModal()
   const { openUpgradeModal } = useUpgradeModal()
   const { user } = useUser()
+  const router = useRouter()
 
-  // Not logged in → auth modal | logged in, not Pro → upgrade modal | Pro → open job
+  function openApply() {
+    if (!user || !user.atsProfileId) {
+      router.push('/get-started')
+      return
+    }
+    setApplyModalOpen(true)
+  }
+
+  // Not logged in → auth modal | not Pro → upgrade modal | Pro → ATS flow
   const handleApply = !user
     ? openAuthModal
     : user.isPro
-      ? () => window.open(job.applyUrl, '_blank', 'noopener,noreferrer')
+      ? openApply
       : openUpgradeModal
   const badges = getContextBadges(job)
 
@@ -206,6 +218,15 @@ export default function JobRow({ job, onHide }: JobRowProps) {
           </button>
         </div>
       </div>
+
+      {/* ATS apply progress modal */}
+      {applyModalOpen && user?.atsProfileId && (
+        <ApplyProgressModal
+          job={job}
+          atsProfileId={user.atsProfileId}
+          onClose={() => setApplyModalOpen(false)}
+        />
+      )}
 
       {/* Expanded details */}
       {expanded && (

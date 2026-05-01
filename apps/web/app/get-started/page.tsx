@@ -2,8 +2,11 @@
 
 import { useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Zap, ArrowLeft, Upload, CheckCircle, Briefcase, GraduationCap, Code2, Link2 } from 'lucide-react'
+import { Zap, ArrowLeft, Upload, CheckCircle, Briefcase, GraduationCap, Code2, Link2, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
+import { getSupabaseBrowser } from '@/lib/supabase-browser'
+
+const ATS_URL = process.env.NEXT_PUBLIC_ATS_BEATER_URL ?? 'https://ocupa-production.up.railway.app'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -21,6 +24,19 @@ interface Answers {
   disability: string
 }
 
+interface ATSLink { name: string; url: string }
+interface ATSExperience { company_name: string; role: string; start_date?: string; end_date?: string }
+interface ATSEducation { institution: string; degree: string; start_date?: string; end_date?: string }
+interface ATSSkill { name: string; category: string }
+interface ATSResumeInfo {
+  name: string
+  mobile_number?: string
+  links?: ATSLink[]
+  past_experience?: ATSExperience[]
+  educations?: ATSEducation[]
+  skills?: ATSSkill[]
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const TOTAL_STEPS = 8
@@ -32,17 +48,6 @@ const BR_CITIES = [
   'São Gonçalo', 'Maceió', 'Natal', 'Teresina', 'Campo Grande',
   'Florianópolis', 'Vitória', 'Joinville',
 ]
-
-const MOCK_EXPERIENCE = [
-  { company: 'Nubank', role: 'Software Engineer', period: '2022 – 2024' },
-  { company: 'Conta Simples', role: 'Frontend Developer', period: '2020 – 2022' },
-]
-
-const MOCK_EDUCATION = [
-  { school: 'USP', degree: 'Bacharelado em Ciência da Computação', period: '2016 – 2020' },
-]
-
-const MOCK_SKILLS = ['React', 'TypeScript', 'Node.js', 'Python', 'PostgreSQL', 'Docker']
 
 const GENDER_OPTS = ['Masculino', 'Feminino', 'Não-binário', 'Prefiro não informar']
 const RACE_OPTS = ['Branco(a)', 'Preto(a)', 'Pardo(a)', 'Amarelo(a)', 'Indígena', 'Prefiro não informar']
@@ -103,12 +108,64 @@ function Chip({
   )
 }
 
+// ─── ATS helpers ─────────────────────────────────────────────────────────────
+
+async function getAtsJwt(supabaseAccessToken: string): Promise<string> {
+  const res = await fetch(`${ATS_URL}/auth/supabase`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ supabase_access_token: supabaseAccessToken }),
+  })
+  if (!res.ok) throw new Error(`ATS auth failed: ${res.status}`)
+  const { access_token } = await res.json()
+  return access_token
+}
+
+async function uploadAndProcessCv(
+  file: File,
+  atsJwt: string,
+): Promise<{ profileId: number; resumeInfo: ATSResumeInfo }> {
+  // Upload
+  const form = new FormData()
+  form.append('file', file)
+  const uploadRes = await fetch(`${ATS_URL}/profiles/upload`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${atsJwt}` },
+    body: form,
+  })
+  if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.status}`)
+  const { profile_id } = await uploadRes.json()
+
+  // Poll until READY (max 90 s)
+  for (let i = 0; i < 45; i++) {
+    await new Promise((r) => setTimeout(r, 2000))
+    const statusRes = await fetch(`${ATS_URL}/profiles/${profile_id}/status`, {
+      headers: { Authorization: `Bearer ${atsJwt}` },
+    })
+    if (!statusRes.ok) continue
+    const { status } = await statusRes.json()
+    if (status === 'FAILED') throw new Error('Processing failed')
+    if (status === 'READY') {
+      // Fetch full profile
+      const profileRes = await fetch(`${ATS_URL}/profiles/${profile_id}`, {
+        headers: { Authorization: `Bearer ${atsJwt}` },
+      })
+      if (!profileRes.ok) throw new Error('Failed to fetch profile')
+      const { resume_info } = await profileRes.json()
+      return { profileId: profile_id, resumeInfo: resume_info }
+    }
+  }
+  throw new Error('Timeout: processing took too long')
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function GetStartedPage() {
   const router = useRouter()
   const [step, setStep] = useState(1)
   const [cvLoading, setCvLoading] = useState(false)
+  const [cvError, setCvError] = useState('')
+  const [extractedInfo, setExtractedInfo] = useState<ATSResumeInfo | null>(null)
   const [cityQ, setCityQ] = useState('')
   const [cityOpen, setCityOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -145,9 +202,48 @@ export default function GetStartedPage() {
     if (!file || file.type !== 'application/pdf') return
     patch({ cvFile: file })
     setCvLoading(true)
-    await new Promise((r) => setTimeout(r, 1600))
-    setCvLoading(false)
-    patch({ cvReady: true })
+    setCvError('')
+
+    try {
+      const supabase = getSupabaseBrowser()
+      const { data: { session } } = await supabase.auth.getSession()
+
+      if (!session?.access_token) {
+        // Not logged in — allow continuing without AI extraction
+        patch({ cvReady: true })
+        return
+      }
+
+      const atsJwt = await getAtsJwt(session.access_token)
+      const { profileId, resumeInfo } = await uploadAndProcessCv(file, atsJwt)
+
+      // Persist ats_profile_id to Supabase profiles table
+      await supabase
+        .from('profiles')
+        .upsert({ id: session.user.id, ats_profile_id: profileId })
+
+      // Pre-fill form fields with extracted data
+      const nameParts = (resumeInfo.name ?? '').trim().split(/\s+/).filter(Boolean)
+      const linkedinLink = resumeInfo.links?.find(
+        (l) => l.name?.toLowerCase().includes('linkedin') || l.url?.includes('linkedin.com'),
+      )
+      patch({
+        firstName: nameParts[0] ?? answers.firstName,
+        lastName: nameParts.slice(1).join(' ') || answers.lastName,
+        phone: resumeInfo.mobile_number
+          ? formatPhone(resumeInfo.mobile_number)
+          : answers.phone,
+        linkedin: linkedinLink?.url ?? answers.linkedin,
+        cvReady: true,
+      })
+      setExtractedInfo(resumeInfo)
+    } catch (err) {
+      console.error('CV processing error:', err)
+      setCvError('Não foi possível processar o PDF automaticamente. Continue preenchendo manualmente.')
+      patch({ cvReady: true })
+    } finally {
+      setCvLoading(false)
+    }
   }
 
   const filteredCities = BR_CITIES.filter((c) =>
@@ -179,7 +275,6 @@ export default function GetStartedPage() {
             Seu perfil está completo. Ative o Auto-Apply e comece a receber candidaturas automáticas.
           </p>
 
-          {/* Spinning CTA */}
           <div className="relative mt-8 overflow-hidden rounded-xl p-[2px]">
             <div
               className="animate-rotate-gradient absolute"
@@ -280,6 +375,12 @@ export default function GetStartedPage() {
                 </>
               )}
             </div>
+            {cvError && (
+              <div className="mt-3 flex items-start gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2.5">
+                <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-orange-500" />
+                <p className="text-[12px] leading-relaxed text-orange-700">{cvError}</p>
+              </div>
+            )}
             <div className="mt-6">
               <Btn onClick={next} disabled={!answers.cvReady}>
                 Continuar
@@ -289,59 +390,90 @@ export default function GetStartedPage() {
         )
 
       // ── Step 2: Review extracted data ────────────────────────────────────
-      case 2:
+      case 2: {
+        const experiences = extractedInfo?.past_experience ?? []
+        const educations = extractedInfo?.educations ?? []
+        const skills = extractedInfo?.skills?.map((s) => s.name) ?? []
+        const hasData = experiences.length > 0 || educations.length > 0 || skills.length > 0
         return (
           <>
             <StepHeader
               badge="Passo 2 de 8"
               title="Revise o que extraímos"
-              sub="Confirme se as informações estão corretas antes de continuar."
+              sub={hasData
+                ? 'Confirme se as informações estão corretas antes de continuar.'
+                : 'Não conseguimos extrair dados do PDF. Continue preenchendo manualmente.'}
             />
-            <div className="mt-6 flex flex-col gap-4">
-              {/* Experience */}
-              <Section icon={<Briefcase className="h-4 w-4" />} title="Experiência">
-                {MOCK_EXPERIENCE.map((e, i) => (
-                  <div key={i} className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-semibold" style={{ color: '#1d161d' }}>{e.role}</p>
-                      <p className="font-mono-dm text-[11px]" style={{ color: '#a89ea8' }}>{e.company}</p>
+            {hasData ? (
+              <div className="mt-6 flex flex-col gap-4">
+                {experiences.length > 0 && (
+                  <Section icon={<Briefcase className="h-4 w-4" />} title="Experiência">
+                    {experiences.slice(0, 3).map((e, i) => (
+                      <div key={i} className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-semibold" style={{ color: '#1d161d' }}>{e.role}</p>
+                          <p className="font-mono-dm text-[11px]" style={{ color: '#a89ea8' }}>{e.company_name}</p>
+                        </div>
+                        {(e.start_date || e.end_date) && (
+                          <span className="font-mono-dm flex-shrink-0 text-[11px]" style={{ color: '#a89ea8' }}>
+                            {[e.start_date, e.end_date].filter(Boolean).join(' – ')}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </Section>
+                )}
+                {educations.length > 0 && (
+                  <Section icon={<GraduationCap className="h-4 w-4" />} title="Educação">
+                    {educations.slice(0, 2).map((e, i) => (
+                      <div key={i} className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-semibold" style={{ color: '#1d161d' }}>{e.degree}</p>
+                          <p className="font-mono-dm text-[11px]" style={{ color: '#a89ea8' }}>{e.institution}</p>
+                        </div>
+                        {(e.start_date || e.end_date) && (
+                          <span className="font-mono-dm flex-shrink-0 text-[11px]" style={{ color: '#a89ea8' }}>
+                            {[e.start_date, e.end_date].filter(Boolean).join(' – ')}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </Section>
+                )}
+                {skills.length > 0 && (
+                  <Section icon={<Code2 className="h-4 w-4" />} title="Habilidades">
+                    <div className="flex flex-wrap gap-1.5">
+                      {skills.slice(0, 12).map((s) => (
+                        <span
+                          key={s}
+                          className="font-mono-dm rounded-full px-2.5 py-0.5 text-[11px] font-medium"
+                          style={{ background: 'rgba(47,141,106,0.1)', color: '#2f8d6a' }}
+                        >
+                          {s}
+                        </span>
+                      ))}
                     </div>
-                    <span className="font-mono-dm flex-shrink-0 text-[11px]" style={{ color: '#a89ea8' }}>{e.period}</span>
-                  </div>
-                ))}
-              </Section>
-              {/* Education */}
-              <Section icon={<GraduationCap className="h-4 w-4" />} title="Educação">
-                {MOCK_EDUCATION.map((e, i) => (
-                  <div key={i} className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-semibold" style={{ color: '#1d161d' }}>{e.degree}</p>
-                      <p className="font-mono-dm text-[11px]" style={{ color: '#a89ea8' }}>{e.school}</p>
-                    </div>
-                    <span className="font-mono-dm flex-shrink-0 text-[11px]" style={{ color: '#a89ea8' }}>{e.period}</span>
-                  </div>
-                ))}
-              </Section>
-              {/* Skills */}
-              <Section icon={<Code2 className="h-4 w-4" />} title="Habilidades">
-                <div className="flex flex-wrap gap-1.5">
-                  {MOCK_SKILLS.map((s) => (
-                    <span
-                      key={s}
-                      className="font-mono-dm rounded-full px-2.5 py-0.5 text-[11px] font-medium"
-                      style={{ background: 'rgba(47,141,106,0.1)', color: '#2f8d6a' }}
-                    >
-                      {s}
-                    </span>
-                  ))}
-                </div>
-              </Section>
-            </div>
+                  </Section>
+                )}
+              </div>
+            ) : (
+              <div
+                className="mt-6 rounded-xl border p-6 text-center"
+                style={{ borderColor: '#e8ebe9' }}
+              >
+                <p className="text-sm" style={{ color: '#a89ea8' }}>
+                  Nenhum dado extraído. Preencha as próximas etapas manualmente.
+                </p>
+              </div>
+            )}
             <div className="mt-6">
-              <Btn onClick={next}>Parece correto, continuar</Btn>
+              <Btn onClick={next}>
+                {hasData ? 'Parece correto, continuar' : 'Continuar mesmo assim'}
+              </Btn>
             </div>
           </>
         )
+      }
 
       // ── Step 3: Name ─────────────────────────────────────────────────────
       case 3:

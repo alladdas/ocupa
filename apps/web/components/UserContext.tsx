@@ -11,6 +11,7 @@ export interface OcupaUser {
   initials: string
   avatarUrl: string | null
   isPro: boolean
+  atsProfileId: number | null
 }
 
 function deriveFromSupabase(supabaseUser: User, isPro: boolean): OcupaUser {
@@ -46,6 +47,7 @@ function deriveFromSupabase(supabaseUser: User, isPro: boolean): OcupaUser {
     initials: initials || email.slice(0, 2).toUpperCase(),
     avatarUrl,
     isPro,
+    atsProfileId: null,
   }
 }
 
@@ -77,15 +79,17 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     function enrichWithProfile(supabaseUser: User) {
       supabase
         .from('profiles')
-        .select('is_pro')
+        .select('is_pro, ats_profile_id')
         .eq('id', supabaseUser.id)
         .single()
-        .then(({ data }: { data: { is_pro: boolean } | null }) => {
-          if (data?.is_pro) {
-            setUser(prev => prev ? { ...prev, isPro: true } : prev)
-          }
+        .then(({ data }: { data: { is_pro: boolean; ats_profile_id: number | null } | null }) => {
+          setUser(prev => prev ? {
+            ...prev,
+            isPro: data?.is_pro ?? prev.isPro,
+            atsProfileId: data?.ats_profile_id ?? null,
+          } : prev)
         })
-        .catch(() => {/* profiles table missing or RLS blocked — isPro stays false */})
+        .catch(() => {/* profiles table missing or RLS blocked */})
     }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
