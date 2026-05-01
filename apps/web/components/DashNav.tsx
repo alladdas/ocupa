@@ -114,6 +114,7 @@ function UserAvatar() {
 export default function DashNav() {
   const { user } = useUser()
   const { openUpgradeModal } = useUpgradeModal()
+  console.log('[DashNav] render →', { user: user ? { id: user.id, email: user.email } : null })
 
   return (
     <nav
