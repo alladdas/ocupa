@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { X, CheckCircle, Zap } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { X, CheckCircle, Zap, Loader2 } from 'lucide-react'
 import { useUpgradeModal } from '@/components/UpgradeModalContext'
+import { useUser } from '@/components/UserContext'
+import { useAuthModal } from '@/components/AuthModalContext'
 
 const BULLETS = [
   'Aplica automaticamente assim que a vaga abre',
@@ -13,34 +14,65 @@ const BULLETS = [
 
 export default function UpgradeModal() {
   const { isOpen, closeUpgradeModal } = useUpgradeModal()
-  const router = useRouter()
+  const { user } = useUser()
+  const { openAuthModal } = useAuthModal()
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     if (!isOpen) return
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeUpgradeModal()
+      if (e.key === 'Escape' && !loading) closeUpgradeModal()
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [isOpen, closeUpgradeModal])
+  }, [isOpen, loading, closeUpgradeModal])
 
   useEffect(() => {
     document.body.style.overflow = isOpen ? 'hidden' : ''
     return () => { document.body.style.overflow = '' }
   }, [isOpen])
 
+  // Reset state when modal closes
+  useEffect(() => {
+    if (!isOpen) { setError(''); setLoading(false) }
+  }, [isOpen])
+
   if (!isOpen) return null
 
-  function handleCTA() {
-    closeUpgradeModal()
-    router.push('/get-started')
+  async function handleCTA() {
+    if (!user) {
+      closeUpgradeModal()
+      openAuthModal()
+      return
+    }
+
+    setLoading(true)
+    setError('')
+    try {
+      const res = await fetch('/api/stripe/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, email: user.email }),
+      })
+      const data = await res.json() as { url?: string; error?: string }
+      if (!res.ok || !data.url) {
+        setError(data.error ?? 'Erro ao iniciar checkout. Tente novamente.')
+        setLoading(false)
+        return
+      }
+      window.location.href = data.url
+    } catch {
+      setError('Erro de rede. Tente novamente.')
+      setLoading(false)
+    }
   }
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
-      onClick={closeUpgradeModal}
+      onClick={() => !loading && closeUpgradeModal()}
     >
       <div
         className="relative w-full overflow-hidden"
@@ -60,14 +92,16 @@ export default function UpgradeModal() {
         />
 
         {/* Close */}
-        <button
-          onClick={closeUpgradeModal}
-          className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-white/10"
-          style={{ color: 'rgba(255,255,255,0.3)' }}
-          aria-label="Fechar"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        {!loading && (
+          <button
+            onClick={closeUpgradeModal}
+            className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-white/10"
+            style={{ color: 'rgba(255,255,255,0.3)' }}
+            aria-label="Fechar"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
 
         <div className="px-7 pb-6 pt-7">
           {/* Badge */}
@@ -114,6 +148,11 @@ export default function UpgradeModal() {
             ))}
           </div>
 
+          {/* Error */}
+          {error && (
+            <p className="mt-4 text-center text-sm" style={{ color: '#f87171' }}>{error}</p>
+          )}
+
           {/* CTA — conic-gradient spinning border */}
           <div className="relative mt-8 overflow-hidden rounded-xl p-[2px]">
             {/* Spinning gradient layer */}
@@ -131,26 +170,33 @@ export default function UpgradeModal() {
             {/* Inner button */}
             <button
               onClick={handleCTA}
-              className="relative w-full rounded-[10px] py-4 text-center text-[15px] font-bold text-white transition-opacity hover:opacity-90"
-              style={{
-                background: '#0d1a14',
-                letterSpacing: '-0.2px',
-              }}
+              disabled={loading}
+              className="relative flex w-full items-center justify-center gap-2 rounded-[10px] py-4 text-center text-[15px] font-bold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              style={{ background: '#0d1a14', letterSpacing: '-0.2px' }}
             >
-              Ativar Auto-Apply — R$14,90/semana
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Abrindo checkout…
+                </>
+              ) : (
+                user ? 'Ativar Auto-Apply — R$14,90/semana' : 'Criar conta para assinar'
+              )}
             </button>
           </div>
 
           {/* Dismiss */}
-          <div className="mt-4 text-center">
-            <button
-              onClick={closeUpgradeModal}
-              className="text-[13px] transition-colors hover:text-white/50"
-              style={{ color: 'rgba(255,255,255,0.2)', background: 'none', border: 'none', cursor: 'pointer' }}
-            >
-              Agora não
-            </button>
-          </div>
+          {!loading && (
+            <div className="mt-4 text-center">
+              <button
+                onClick={closeUpgradeModal}
+                className="text-[13px] transition-colors hover:text-white/50"
+                style={{ color: 'rgba(255,255,255,0.2)', background: 'none', border: 'none', cursor: 'pointer' }}
+              >
+                Agora não
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
