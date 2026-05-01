@@ -1,4 +1,5 @@
 import os
+import time
 import logging
 import requests
 from supabase import create_client, Client
@@ -67,6 +68,23 @@ def scrape_greenhouse() -> int:
                 if existing.data:
                     continue
 
+                # Listing endpoint does not include content — fetch per-job detail.
+                # Only called for new jobs to avoid unnecessary requests.
+                description = ''
+                try:
+                    detail = requests.get(
+                        f'https://boards-api.greenhouse.io/v1/boards/{slug}/jobs/{job_id}',
+                        params={'questions': 'true'},
+                        timeout=15,
+                    )
+                    if detail.status_code == 200:
+                        description = detail.json().get('content') or ''
+                    else:
+                        logger.debug(f'[greenhouse] detail {slug}/{job_id} → HTTP {detail.status_code}')
+                except Exception as exc:
+                    logger.debug(f'[greenhouse] detail error ({slug} #{job_id}): {exc}')
+                time.sleep(0.5)  # throttle per-job detail calls
+
                 location_field = job.get('location', {})
                 location_name = (
                     location_field.get('name', '') if isinstance(location_field, dict)
@@ -83,7 +101,7 @@ def scrape_greenhouse() -> int:
                     'salary_min': None,
                     'salary_max': None,
                     'posted_at': job.get('updated_at'),
-                    'description': job.get('content') or '',
+                    'description': description,
                     'source': 'greenhouse',
                     'tier': 'free',
                 }

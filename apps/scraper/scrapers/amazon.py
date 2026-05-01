@@ -94,7 +94,8 @@ def scrape_amazon() -> int:
                     'salary_min': None,
                     'salary_max': None,
                     'posted_at': _parse_date(job.get('posted_date', '')),
-                    'description': '',
+                    # search.json includes full description HTML in the listing payload
+                    'description': (job.get('description') or '').strip(),
                     'source': 'amazon',
                     'tier': 'free',
                 }

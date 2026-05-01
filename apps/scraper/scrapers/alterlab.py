@@ -8,6 +8,7 @@ Runs once per day (see scheduler.py).
 import os
 import re
 import json
+import time
 import logging
 import requests
 from bs4 import BeautifulSoup
@@ -145,6 +146,26 @@ def _extract_payload(response: dict) -> tuple[dict | list | None, str]:
 
     # Last resort: the response itself might be the data
     return None, ''
+
+
+# ─── Description helpers ─────────────────────────────────────────────────────
+
+def _fetch_gupy_description(job_id: str) -> str:
+    """Fetch description from Gupy portal API for a job from a company Gupy board.
+    Called only for new jobs to avoid unnecessary network requests.
+    Returns HTML string or '' on failure.
+    """
+    try:
+        resp = requests.get(
+            f'https://employability-portal.gupy.io/api/v1/jobs/{job_id}',
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return resp.json().get('description') or ''
+        logger.debug(f'[alterlab] Gupy description {job_id} → HTTP {resp.status_code}')
+    except Exception as exc:
+        logger.debug(f'[alterlab] Gupy description fetch failed ({job_id}): {exc}')
+    return ''
 
 
 # ─── Source-specific parsers ─────────────────────────────────────────────────
@@ -711,6 +732,16 @@ def scrape_alterlab() -> int:
                     existing = supabase.table('scraped_jobs').select('id').eq('id', job_id).execute()
                     if existing.data:
                         continue
+
+                    # For Gupy company boards, fetch description from the Gupy API.
+                    # iFood / dtidigital / mercadolivre require per-job page scraping
+                    # (not implemented — listing pages don't carry descriptions).
+                    if company_type == 'gupy_board' and not job.get('description'):
+                        m = re.search(r'/jobs/(\d+)', job.get('url', ''))
+                        if m:
+                            job['description'] = _fetch_gupy_description(m.group(1))
+                            time.sleep(0.2)
+
                     supabase.table('scraped_jobs').insert(job).execute()
                     new_count += 1
                 except Exception as exc:

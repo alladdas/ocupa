@@ -7,6 +7,7 @@ Apenas empresas que publicam no portal público têm companyId acessível.
 """
 
 import os
+import time
 import logging
 import requests
 from supabase import create_client, Client
@@ -100,6 +101,22 @@ def scrape_gupy() -> int:
                 if existing.data:
                     continue
 
+                # Listing endpoint often omits description — fetch per-job detail for new jobs.
+                description = job.get('description') or ''
+                if not description:
+                    try:
+                        detail = requests.get(
+                            f'https://employability-portal.gupy.io/api/v1/jobs/{job_id}',
+                            timeout=15,
+                        )
+                        if detail.status_code == 200:
+                            description = detail.json().get('description') or ''
+                        else:
+                            logger.debug(f'[gupy] detail {job_id} → HTTP {detail.status_code}')
+                    except Exception as exc:
+                        logger.debug(f'[gupy] detail error (#{job_id}): {exc}')
+                    time.sleep(0.2)
+
                 location_parts = list(filter(None, [job.get('city'), job.get('state')]))
 
                 record = {
@@ -112,7 +129,7 @@ def scrape_gupy() -> int:
                     'salary_min': None,
                     'salary_max': None,
                     'posted_at': job.get('publishedDate') or job.get('applicationDeadline'),
-                    'description': job.get('description') or '',
+                    'description': description,
                     'source': 'gupy',
                     'tier': 'free',
                 }
