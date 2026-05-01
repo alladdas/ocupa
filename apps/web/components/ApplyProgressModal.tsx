@@ -25,6 +25,18 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
+function extractErrorMsg(err: unknown): string {
+  if (err instanceof Error) return err.message
+  if (err && typeof err === 'object') {
+    const e = err as Record<string, unknown>
+    if (typeof e.message === 'string') return e.message
+    if (typeof e.error_description === 'string') return e.error_description
+    if (typeof e.msg === 'string') return e.msg
+    return JSON.stringify(e)
+  }
+  return String(err) || 'Erro desconhecido'
+}
+
 interface Props {
   job: Job
   userId: string
@@ -50,12 +62,18 @@ export default function ApplyProgressModal({ job, userId, onClose }: Props) {
       setStage('checking')
       const supabase = getSupabaseBrowser()
 
-      const { data: resume } = await supabase
+      console.log('[ApplyModal] checking resumes for user', userId)
+      const { data: resume, error: resumeErr } = await supabase
         .from('resumes')
         .select('file_url, file_name')
         .eq('user_id', userId)
         .eq('is_primary', true)
         .single()
+
+      if (resumeErr && resumeErr.code !== 'PGRST116') {
+        console.error('[ApplyModal] resumes query failed:', resumeErr)
+      }
+      console.log('[ApplyModal] primary resume:', resume ?? 'none')
 
       if (cancelledRef.current) return
 
@@ -67,7 +85,8 @@ export default function ApplyProgressModal({ job, userId, onClose }: Props) {
       await runAtsFlow(resume.file_url as string, resume.file_name as string)
     } catch (err) {
       if (cancelledRef.current) return
-      setErrorMsg(err instanceof Error ? err.message : 'Erro desconhecido')
+      console.error('[ApplyModal] checkAndRun error:', err)
+      setErrorMsg(extractErrorMsg(err))
       setStage('error')
     }
   }
@@ -79,8 +98,12 @@ export default function ApplyProgressModal({ job, userId, onClose }: Props) {
       const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')
       const path = `${userId}/${Date.now()}-${safeName}`
 
+      console.log('[ApplyModal] uploading CV to Storage:', path)
       const { error } = await supabase.storage.from('resumes').upload(path, file, { upsert: false })
-      if (error) throw new Error(`Falha ao enviar arquivo: ${error.message}`)
+      if (error) {
+        console.error('[ApplyModal] Storage upload failed:', error)
+        throw new Error(`Falha ao enviar arquivo: ${error.message}`)
+      }
 
       if (cancelledRef.current) return
 
@@ -90,7 +113,8 @@ export default function ApplyProgressModal({ job, userId, onClose }: Props) {
       await runAtsFlow(path, file.name)
     } catch (err) {
       if (cancelledRef.current) return
-      setErrorMsg(err instanceof Error ? err.message : 'Erro desconhecido')
+      console.error('[ApplyModal] handleFileUpload error:', err)
+      setErrorMsg(extractErrorMsg(err))
       setStage('error')
     }
   }
@@ -104,13 +128,19 @@ export default function ApplyProgressModal({ job, userId, onClose }: Props) {
       const { data: sessionData } = await supabase.auth.getSession()
       if (!sessionData.session?.access_token) throw new Error('Sessão expirada. Faça login novamente.')
 
+      console.log('[ApplyModal] POST /auth/supabase')
       const authRes = await fetch(`${ATS_URL}/auth/supabase`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ supabase_access_token: sessionData.session.access_token }),
       })
-      if (!authRes.ok) throw new Error('Falha na autenticação com o servidor.')
+      if (!authRes.ok) {
+        const body = await authRes.text().catch(() => '(no body)')
+        console.error('[ApplyModal] /auth/supabase failed:', authRes.status, body)
+        throw new Error(`Falha na autenticação com o servidor (${authRes.status}): ${body}`)
+      }
       const { access_token: atsJwt } = await authRes.json() as { access_token: string }
+      console.log('[ApplyModal] ATS JWT obtained')
 
       if (cancelledRef.current) return
 
@@ -122,13 +152,19 @@ export default function ApplyProgressModal({ job, userId, onClose }: Props) {
         .single()
 
       let atsProfileId = (profileRow as { ats_profile_id: number | null } | null)?.ats_profile_id ?? null
+      console.log('[ApplyModal] ats_profile_id from DB:', atsProfileId)
 
       if (!atsProfileId) {
+        console.log('[ApplyModal] downloading CV from Storage:', storagePath)
         const { data: cvBlob, error: dlErr } = await supabase.storage.from('resumes').download(storagePath)
-        if (dlErr || !cvBlob) throw new Error('Não foi possível acessar o currículo.')
+        if (dlErr || !cvBlob) {
+          console.error('[ApplyModal] Storage download failed:', dlErr)
+          throw new Error(`Não foi possível acessar o currículo: ${dlErr?.message ?? 'blob vazio'}`)
+        }
 
         if (cancelledRef.current) return
 
+        console.log('[ApplyModal] POST /profiles/upload, size:', cvBlob.size)
         const formData = new FormData()
         formData.append('file', cvBlob, fileName)
         const uploadRes = await fetch(`${ATS_URL}/profiles/upload`, {
@@ -138,10 +174,12 @@ export default function ApplyProgressModal({ job, userId, onClose }: Props) {
         })
         if (!uploadRes.ok) {
           const err = await uploadRes.json().catch(() => ({})) as { detail?: string }
+          console.error('[ApplyModal] /profiles/upload failed:', uploadRes.status, err)
           throw new Error(err?.detail ?? `Erro ao enviar currículo (${uploadRes.status})`)
         }
         const { profile_id } = await uploadRes.json() as { profile_id: number }
         atsProfileId = profile_id
+        console.log('[ApplyModal] ATS profile created, profile_id:', atsProfileId)
 
         await supabase.from('profiles').upsert({ id: userId, ats_profile_id: atsProfileId })
       }
@@ -150,6 +188,7 @@ export default function ApplyProgressModal({ job, userId, onClose }: Props) {
 
       // 3. Create ATS job
       setStage('creating')
+      console.log('[ApplyModal] POST /jobs/ for profile', atsProfileId)
       const jobRes = await fetch(`${ATS_URL}/jobs/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${atsJwt}` },
@@ -165,24 +204,29 @@ export default function ApplyProgressModal({ job, userId, onClose }: Props) {
       })
       if (!jobRes.ok) {
         const err = await jobRes.json().catch(() => ({})) as { detail?: string }
+        console.error('[ApplyModal] /jobs/ failed:', jobRes.status, err)
         throw new Error(err?.detail ?? `Erro ao criar vaga (${jobRes.status})`)
       }
       const { job_id: atsJobId } = await jobRes.json() as { job_id: number }
+      console.log('[ApplyModal] ATS job created, job_id:', atsJobId)
 
       if (cancelledRef.current) return
 
       // 4. Trigger generation
       setStage('generating')
+      console.log('[ApplyModal] POST /jobs/', atsJobId, '/generate-resume')
       const genRes = await fetch(`${ATS_URL}/jobs/${atsJobId}/generate-resume`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${atsJwt}` },
       })
       if (!genRes.ok) {
         const err = await genRes.json().catch(() => ({})) as { detail?: string }
+        console.error('[ApplyModal] /generate-resume failed:', genRes.status, err)
         throw new Error(err?.detail ?? `Erro ao iniciar geração (${genRes.status})`)
       }
 
       // 5. Poll status (max 120 s)
+      console.log('[ApplyModal] polling status for job', atsJobId)
       for (let i = 0; i < 60; i++) {
         if (cancelledRef.current) return
         await new Promise((r) => setTimeout(r, 2000))
@@ -190,10 +234,17 @@ export default function ApplyProgressModal({ job, userId, onClose }: Props) {
         const statusRes = await fetch(`${ATS_URL}/jobs/${atsJobId}/status`, {
           headers: { Authorization: `Bearer ${atsJwt}` },
         })
-        if (!statusRes.ok) continue
+        if (!statusRes.ok) {
+          console.warn('[ApplyModal] status poll non-ok:', statusRes.status, '(retry', i, ')')
+          continue
+        }
         const { status } = await statusRes.json() as { status: string }
+        console.log('[ApplyModal] job status:', status, '(poll', i, ')')
 
-        if (status === 'FAILED') throw new Error('A geração do currículo falhou. Tente novamente.')
+        if (status === 'FAILED') {
+          console.error('[ApplyModal] job FAILED for atsJobId', atsJobId)
+          throw new Error('A geração do currículo falhou. Tente novamente.')
+        }
         if (status === 'GENERATING_PDF') setStage('pdf')
         if (status === 'READY') {
           if (cancelledRef.current) return
@@ -205,6 +256,9 @@ export default function ApplyProgressModal({ job, userId, onClose }: Props) {
           if (pdfRes.ok) {
             const blob = await pdfRes.blob()
             setPdfBlobUrl(URL.createObjectURL(blob))
+            console.log('[ApplyModal] PDF downloaded, size:', blob.size)
+          } else {
+            console.warn('[ApplyModal] PDF fetch failed:', pdfRes.status)
           }
 
           window.open(job.applyUrl, '_blank', 'noopener,noreferrer')
@@ -214,7 +268,8 @@ export default function ApplyProgressModal({ job, userId, onClose }: Props) {
       throw new Error('Tempo esgotado. O servidor demorou mais que o esperado.')
     } catch (err) {
       if (cancelledRef.current) return
-      setErrorMsg(err instanceof Error ? err.message : 'Erro desconhecido')
+      console.error('[ApplyModal] runAtsFlow error:', err)
+      setErrorMsg(extractErrorMsg(err))
       setStage('error')
     }
   }
@@ -302,12 +357,12 @@ export default function ApplyProgressModal({ job, userId, onClose }: Props) {
           {stage === 'upload' && (
             <div className="mt-6 w-full">
               <p className="mb-4 text-sm leading-relaxed" style={{ color: 'var(--d-text-2)' }}>
-                Você ainda não tem um currículo salvo. Envie seu PDF para continuar.
+                Você ainda não tem um currículo salvo. Envie seu arquivo para continuar.
               </p>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".pdf"
+                accept=".pdf,.doc,.docx,.txt"
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0]
@@ -320,7 +375,7 @@ export default function ApplyProgressModal({ job, userId, onClose }: Props) {
                 style={{ background: '#2f8d6a' }}
               >
                 <Upload className="h-4 w-4" />
-                Selecionar PDF
+                Selecionar arquivo
               </button>
             </div>
           )}

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { Zap, Sun, Moon, LogOut } from 'lucide-react'
+import { Zap, Sun, Moon, LogOut, User } from 'lucide-react'
 import { useTheme } from '@/components/ThemeProvider'
 import { useUser } from '@/components/UserContext'
 import { useUpgradeModal } from '@/components/UpgradeModalContext'
@@ -97,6 +97,15 @@ function UserAvatar() {
               </span>
             )}
           </div>
+          <Link
+            href="/profile"
+            onClick={() => setOpen(false)}
+            className="flex w-full items-center gap-2 px-4 py-2.5 text-sm transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: 'var(--d-text-2)' }}
+          >
+            <User className="h-3.5 w-3.5" />
+            Meu perfil
+          </Link>
           <button
             onClick={() => { logout(); setOpen(false) }}
             className="flex w-full items-center gap-2 px-4 py-2.5 text-sm transition-colors hover:bg-black/5 dark:hover:bg-white/5"
