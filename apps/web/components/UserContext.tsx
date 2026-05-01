@@ -1,7 +1,8 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js'
+import { useRouter, usePathname } from 'next/navigation'
 import { getSupabaseBrowser } from '@/lib/supabase-browser'
 
 export interface OcupaUser {
@@ -70,37 +71,54 @@ export function useUser() {
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<OcupaUser | null>(null)
   const [loading, setLoading] = useState(true)
+  const router = useRouter()
+  const pathname = usePathname()
+
+  // Refs so async callbacks never capture stale values
+  const routerRef = useRef(router)
+  const pathnameRef = useRef(pathname)
+  const currentUserIdRef = useRef<string | null>(null)
+
+  useEffect(() => { routerRef.current = router }, [router])
+  useEffect(() => { pathnameRef.current = pathname }, [pathname])
 
   useEffect(() => {
     const supabase = getSupabaseBrowser()
 
-    // Enrich with is_pro from profiles table in the background.
-    // setUser is already called with isPro=false before this runs.
     function enrichWithProfile(supabaseUser: User) {
+      const uid = supabaseUser.id
+      currentUserIdRef.current = uid
+
       supabase
         .from('profiles')
-        .select('is_pro, ats_profile_id')
-        .eq('id', supabaseUser.id)
+        .select('is_pro, ats_profile_id, onboarding_completed')
+        .eq('id', uid)
         .single()
-        .then(({ data }: { data: { is_pro: boolean; ats_profile_id: number | null } | null }) => {
+        .then(({ data }: { data: { is_pro: boolean; ats_profile_id: number | null; onboarding_completed: boolean | null } | null }) => {
+          if (currentUserIdRef.current !== uid) return  // user switched account mid-flight
+
           setUser(prev => prev ? {
             ...prev,
             isPro: data?.is_pro ?? prev.isPro,
             atsProfileId: data?.ats_profile_id ?? null,
           } : prev)
+
+          if (!data?.onboarding_completed && pathnameRef.current !== '/get-started') {
+            routerRef.current.push('/get-started')
+          }
         })
-        .catch(() => {/* profiles table missing or RLS blocked */})
+        .catch(() => {/* profiles table missing or RLS blocked — no redirect */})
     }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event: AuthChangeEvent, session: Session | null) => {
         if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
           if (session?.user) {
-            // Set user immediately from auth data — no awaiting a DB query
             setUser(deriveFromSupabase(session.user, false))
             enrichWithProfile(session.user)
           }
         } else if (event === 'SIGNED_OUT') {
+          currentUserIdRef.current = null
           setUser(null)
         }
         setLoading(false)
@@ -111,6 +129,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const logout = async () => {
+    currentUserIdRef.current = null
     await getSupabaseBrowser().auth.signOut()
     setUser(null)
   }

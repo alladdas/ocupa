@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Lock, Share2, EyeOff, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react'
 import { cn, getCompanyColor, getCompanyInitials } from '@/lib/utils'
 import FreshBadge from '@/components/FreshBadge'
@@ -84,13 +83,7 @@ export default function JobRow({ job, onHide }: JobRowProps) {
   const { openAuthModal } = useAuthModal()
   const { openUpgradeModal } = useUpgradeModal()
   const { user } = useUser()
-  const router = useRouter()
-
   function openApply() {
-    if (!user || !user.atsProfileId) {
-      router.push('/get-started')
-      return
-    }
     setApplyModalOpen(true)
   }
 
@@ -220,10 +213,10 @@ export default function JobRow({ job, onHide }: JobRowProps) {
       </div>
 
       {/* ATS apply progress modal */}
-      {applyModalOpen && user?.atsProfileId && (
+      {applyModalOpen && user && (
         <ApplyProgressModal
           job={job}
-          atsProfileId={user.atsProfileId}
+          userId={user.id}
           onClose={() => setApplyModalOpen(false)}
         />
       )}
