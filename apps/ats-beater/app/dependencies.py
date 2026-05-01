@@ -117,4 +117,4 @@ async def release_chat_lock(db: AsyncSession, session_key: str, *, rollback_firs
         pass
 
 
-__all__ = ["get_db", "get_settings", "get_current_user", "get_super_admin", "try_chat_lock", "release_chat_lock"]
+__all__ = ["get_settings", "get_current_user", "get_super_admin", "try_chat_lock", "release_chat_lock"]

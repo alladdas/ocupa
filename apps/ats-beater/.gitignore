@@ -51,10 +51,10 @@ htmlcov/
 data/
 
 # Legacy (pre-refactor)
-app_/
-Auth/
-Database/
-SecretManager/
+/app_/
+/Auth/
+/Database/
+/SecretManager/
 OutputPdfs/
 Test_files/
 testing/
