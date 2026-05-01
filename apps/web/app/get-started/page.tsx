@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Zap, ArrowLeft, Upload, CheckCircle, Link2, AlertCircle } from 'lucide-react'
+import { Zap, ArrowLeft, Upload, CheckCircle, Link2, AlertCircle, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import { getSupabaseBrowser } from '@/lib/supabase-browser'
 
@@ -15,7 +15,6 @@ interface Answers {
   lastName: string
   phone: string
   city: string
-  workAuth: '' | 'sim' | 'nao'
   linkedin: string
   gender: string
   race: string
@@ -24,7 +23,14 @@ interface Answers {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const TOTAL_STEPS = 8
+const TOTAL_STEPS = 7
+
+const ACCEPTED_MIME = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'text/plain',
+])
 
 const BR_CITIES = [
   'São Paulo', 'Rio de Janeiro', 'Belo Horizonte', 'Brasília', 'Salvador',
@@ -97,12 +103,14 @@ export default function GetStartedPage() {
   const [cvError, setCvError] = useState('')
   const [cityQ, setCityQ] = useState('')
   const [cityOpen, setCityOpen] = useState(false)
+  const [checkoutLoading, setCheckoutLoading] = useState(false)
+  const [checkoutError, setCheckoutError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const markedCompleteRef = useRef(false)
 
   const [answers, setAnswers] = useState<Answers>({
     cvFile: null, cvReady: false, firstName: '', lastName: '',
-    phone: '', city: '', workAuth: '', linkedin: '',
+    phone: '', city: '', linkedin: '',
     gender: '', race: '', disability: '',
   })
 
@@ -136,27 +144,32 @@ export default function GetStartedPage() {
   }
 
   async function handleCvDrop(file: File) {
-    if (!file || file.type !== 'application/pdf') return
+    if (!file) return
+    if (!ACCEPTED_MIME.has(file.type)) {
+      setCvError('Tipo de arquivo não suportado. Use PDF, DOC, DOCX ou TXT.')
+      return
+    }
     patch({ cvFile: file })
     setCvLoading(true)
     setCvError('')
 
     try {
       const supabase = getSupabaseBrowser()
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: sessionData } = await supabase.auth.getSession()
 
-      if (!session?.user?.id) {
-        // Not authenticated — just mark as ready without uploading
+      if (!sessionData.session?.user?.id) {
+        // Not authenticated — keep locally, mark ready
         patch({ cvReady: true })
         return
       }
 
+      const userId = sessionData.session.user.id
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-      const filePath = `${session.user.id}/${Date.now()}-${safeName}`
+      const filePath = `${userId}/${Date.now()}-${safeName}`
 
       const { error: uploadErr } = await supabase.storage
         .from('resumes')
-        .upload(filePath, file, { upsert: true, contentType: 'application/pdf' })
+        .upload(filePath, file, { upsert: true, contentType: file.type || 'application/octet-stream' })
 
       if (uploadErr) throw uploadErr
 
@@ -164,12 +177,12 @@ export default function GetStartedPage() {
       await supabase
         .from('resumes')
         .update({ is_primary: false })
-        .eq('user_id', session.user.id)
+        .eq('user_id', userId)
         .eq('is_primary', true)
 
       // Insert new primary
       const { error: insertErr } = await supabase.from('resumes').insert({
-        user_id: session.user.id,
+        user_id: userId,
         file_url: filePath,
         file_name: file.name,
         is_primary: true,
@@ -179,10 +192,37 @@ export default function GetStartedPage() {
 
       patch({ cvReady: true })
     } catch (err) {
-      console.error('CV upload error:', err)
-      setCvError('Não foi possível salvar o currículo. Verifique sua conexão e tente novamente.')
+      console.error('[CV upload]', err)
+      const detail = err instanceof Error ? err.message : String(err)
+      setCvError(`Não foi possível salvar o currículo: ${detail}`)
     } finally {
       setCvLoading(false)
+    }
+  }
+
+  async function handleCheckout() {
+    setCheckoutLoading(true)
+    setCheckoutError('')
+    try {
+      const { data: sessionData } = await getSupabaseBrowser().auth.getSession()
+      const supaUser = sessionData.session?.user
+      if (!supaUser) { router.push('/'); return }
+
+      const res = await fetch('/api/stripe/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: supaUser.id, email: supaUser.email }),
+      })
+      const json = await res.json() as { url?: string; error?: string }
+      if (!res.ok || !json.url) {
+        setCheckoutError(json.error ?? 'Erro ao iniciar checkout. Tente novamente.')
+        setCheckoutLoading(false)
+        return
+      }
+      window.location.href = json.url
+    } catch {
+      setCheckoutError('Erro de rede. Tente novamente.')
+      setCheckoutLoading(false)
     }
   }
 
@@ -203,17 +243,25 @@ export default function GetStartedPage() {
           <p className="mt-2 text-sm leading-relaxed" style={{ color: '#a89ea8' }}>
             Seu perfil está completo. Ative o Auto-Apply e comece a receber candidaturas automáticas.
           </p>
+          {checkoutError && (
+            <p className="mt-4 text-sm" style={{ color: '#ef4444' }}>{checkoutError}</p>
+          )}
           <div className="relative mt-8 overflow-hidden rounded-xl p-[2px]">
             <div
               className="animate-rotate-gradient absolute"
               style={{ top: '-100%', left: '-100%', right: '-100%', bottom: '-100%', background: 'conic-gradient(from 0deg, transparent 0%, #2f8d6a 25%, #10b981 40%, transparent 55%)' }}
             />
             <button
-              onClick={() => router.push('/checkout')}
-              className="font-mono-dm relative w-full rounded-[10px] py-4 text-center text-[13px] font-bold uppercase tracking-widest text-white transition-opacity hover:opacity-90"
+              onClick={() => void handleCheckout()}
+              disabled={checkoutLoading}
+              className="font-mono-dm relative flex w-full items-center justify-center gap-2 rounded-[10px] py-4 text-center text-[13px] font-bold uppercase tracking-widest text-white transition-opacity hover:opacity-90 disabled:opacity-60"
               style={{ background: '#0d1a14', letterSpacing: '1px' }}
             >
-              Assinar — R$14,90/semana
+              {checkoutLoading ? (
+                <><Loader2 className="h-4 w-4 animate-spin" />Abrindo checkout…</>
+              ) : (
+                'Assinar — R$14,90/semana'
+              )}
             </button>
           </div>
           <button onClick={() => router.push('/')} className="mt-4 text-[13px] transition-colors hover:text-[#1d161d]/50" style={{ color: '#c4bcc4', background: 'none', border: 'none', cursor: 'pointer' }}>
@@ -232,10 +280,10 @@ export default function GetStartedPage() {
       case 1:
         return (
           <>
-            <StepHeader badge="Passo 1 de 8" title="Envie seu currículo" sub="Salvamos seu PDF para adaptar automaticamente a cada vaga que você aplicar." />
+            <StepHeader badge="Passo 1 de 7" title="Envie seu currículo" sub="Salvamos seu arquivo para adaptar automaticamente a cada vaga que você aplicar." />
             <div
               onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleCvDrop(f) }}
+              onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) void handleCvDrop(f) }}
               onClick={() => !cvLoading && !answers.cvReady && fileInputRef.current?.click()}
               className="mt-6 flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed py-10 transition-colors"
               style={{
@@ -244,7 +292,13 @@ export default function GetStartedPage() {
                 cursor: cvLoading || answers.cvReady ? 'default' : 'pointer',
               }}
             >
-              <input ref={fileInputRef} type="file" accept="application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleCvDrop(f) }} />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.doc,.docx,.txt"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleCvDrop(f) }}
+              />
               {cvLoading ? (
                 <>
                   <div className="h-8 w-8 animate-spin rounded-full border-2 border-transparent" style={{ borderTopColor: '#2f8d6a' }} />
@@ -260,8 +314,8 @@ export default function GetStartedPage() {
               ) : (
                 <>
                   <Upload className="h-8 w-8" style={{ color: '#c4bcc4' }} />
-                  <p className="text-sm font-medium" style={{ color: '#6b636b' }}>Arraste seu PDF aqui ou clique para escolher</p>
-                  <p className="font-mono-dm text-[11px] uppercase" style={{ color: '#c4bcc4' }}>Apenas PDF · Máx 10 MB</p>
+                  <p className="text-sm font-medium" style={{ color: '#6b636b' }}>Arraste seu currículo aqui ou clique para escolher</p>
+                  <p className="font-mono-dm text-[11px] uppercase" style={{ color: '#c4bcc4' }}>PDF, DOC, DOCX ou TXT · Máx 10 MB</p>
                 </>
               )}
             </div>
@@ -278,19 +332,18 @@ export default function GetStartedPage() {
           </>
         )
 
-      // ── Step 2: Intro to profile steps ───────────────────────────────────
+      // ── Step 2: Intro checklist ──────────────────────────────────────────
       case 2:
         return (
           <>
-            <StepHeader badge="Passo 2 de 8" title="Vamos completar seu perfil" sub="Precisamos de alguns dados para personalizar suas candidaturas." />
+            <StepHeader badge="Passo 2 de 7" title="Vamos completar seu perfil" sub="Precisamos de alguns dados para personalizar suas candidaturas." />
             <div className="mt-6 rounded-xl border p-5" style={{ borderColor: '#e8ebe9' }}>
               <div className="flex flex-col gap-3">
                 {[
                   { n: '3–4', label: 'Nome e telefone' },
-                  { n: '5', label: 'Sua cidade' },
-                  { n: '6', label: 'Autorização de trabalho' },
-                  { n: '7', label: 'LinkedIn (opcional)' },
-                  { n: '8', label: 'Diversidade & Inclusão' },
+                  { n: '5',   label: 'Sua cidade' },
+                  { n: '6',   label: 'LinkedIn (opcional)' },
+                  { n: '7',   label: 'Diversidade & Inclusão' },
                 ].map((item) => (
                   <div key={item.n} className="flex items-center gap-3">
                     <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-bold" style={{ background: 'rgba(47,141,106,0.1)', color: '#2f8d6a' }}>
@@ -311,7 +364,7 @@ export default function GetStartedPage() {
       case 3:
         return (
           <>
-            <StepHeader badge="Passo 3 de 8" title="Seu nome completo" sub="Como você quer aparecer nas candidaturas." />
+            <StepHeader badge="Passo 3 de 7" title="Seu nome completo" sub="Como você quer aparecer nas candidaturas." />
             <div className="mt-6 flex flex-col gap-4">
               <div>
                 <label className={lbl}>Primeiro nome</label>
@@ -332,7 +385,7 @@ export default function GetStartedPage() {
       case 4:
         return (
           <>
-            <StepHeader badge="Passo 4 de 8" title="Seu telefone" sub="Para que recrutadores entrem em contato." />
+            <StepHeader badge="Passo 4 de 7" title="Seu telefone" sub="Para que recrutadores entrem em contato." />
             <div className="mt-6">
               <label className={lbl}>Telefone</label>
               <input className={inp} placeholder="(11) 99999-9999" value={answers.phone} onChange={(e) => patch({ phone: formatPhone(e.target.value) })} inputMode="numeric" autoFocus />
@@ -347,7 +400,7 @@ export default function GetStartedPage() {
       case 5:
         return (
           <>
-            <StepHeader badge="Passo 5 de 8" title="Sua cidade" sub="Usamos isso para filtrar vagas presenciais." />
+            <StepHeader badge="Passo 5 de 7" title="Sua cidade" sub="Usamos isso para filtrar vagas presenciais." />
             <div className="relative mt-6">
               <label className={lbl}>Cidade</label>
               <input
@@ -375,29 +428,11 @@ export default function GetStartedPage() {
           </>
         )
 
-      // ── Step 6: Work auth ─────────────────────────────────────────────────
+      // ── Step 6: LinkedIn ─────────────────────────────────────────────────
       case 6:
         return (
           <>
-            <StepHeader badge="Passo 6 de 8" title="Autorização de trabalho" sub="Você tem autorização legal para trabalhar no Brasil?" />
-            <div className="mt-6 grid grid-cols-2 gap-3">
-              {(['sim', 'nao'] as const).map((opt) => (
-                <button key={opt} type="button"
-                  onClick={() => { patch({ workAuth: opt }); setTimeout(next, 220) }}
-                  className="flex h-20 items-center justify-center rounded-xl border-2 text-lg font-bold transition-all"
-                  style={{ borderColor: answers.workAuth === opt ? '#2f8d6a' : '#e8ebe9', background: answers.workAuth === opt ? 'rgba(47,141,106,0.08)' : 'transparent', color: answers.workAuth === opt ? '#2f8d6a' : '#6b636b' }}>
-                  {opt === 'sim' ? '✓ Sim' : '✕ Não'}
-                </button>
-              ))}
-            </div>
-          </>
-        )
-
-      // ── Step 7: LinkedIn ──────────────────────────────────────────────────
-      case 7:
-        return (
-          <>
-            <StepHeader badge="Passo 7 de 8" title="Seu LinkedIn" sub="Usamos para complementar seu perfil e aplicar em vagas que exigem." />
+            <StepHeader badge="Passo 6 de 7" title="Seu LinkedIn" sub="Usamos para complementar seu perfil e aplicar em vagas que exigem." />
             <div className="mt-6">
               <label className={lbl}>URL do LinkedIn</label>
               <div className="relative">
@@ -412,11 +447,11 @@ export default function GetStartedPage() {
           </>
         )
 
-      // ── Step 8: D&I ───────────────────────────────────────────────────────
-      case 8:
+      // ── Step 7: D&I ──────────────────────────────────────────────────────
+      case 7:
         return (
           <>
-            <StepHeader badge="Passo 8 de 8" title="Diversidade & Inclusão" sub="Opcional. Usado apenas para vagas com cotas. Nunca compartilhado sem permissão." />
+            <StepHeader badge="Passo 7 de 7" title="Diversidade & Inclusão" sub="Opcional. Usado apenas para vagas com cotas. Nunca compartilhado sem permissão." />
             <div className="mt-6 flex flex-col gap-5">
               <ChipGroup label="Gênero" options={GENDER_OPTS} selected={answers.gender} onSelect={(v) => patch({ gender: v })} />
               <ChipGroup label="Raça / Cor" options={RACE_OPTS} selected={answers.race} onSelect={(v) => patch({ race: v })} />
