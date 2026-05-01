@@ -7,13 +7,14 @@ import type { Job } from '@/lib/mock-data'
 
 const ATS_URL = process.env.NEXT_PUBLIC_ATS_BEATER_URL ?? 'https://ocupa-production.up.railway.app'
 
-type Stage = 'checking' | 'upload' | 'uploading' | 'preparing' | 'creating' | 'generating' | 'pdf' | 'ready' | 'error'
+type Stage = 'checking' | 'upload' | 'uploading' | 'preparing' | 'extracting' | 'creating' | 'generating' | 'pdf' | 'ready' | 'error'
 
 const STAGE_LABELS: Record<Stage, string> = {
   checking:   'Verificando currículo...',
   upload:     'Envie seu currículo',
   uploading:  'Enviando currículo...',
   preparing:  'Preparando perfil...',
+  extracting: 'Extraindo dados do currículo...',
   creating:   'Analisando vaga...',
   generating: 'Adaptando currículo com IA...',
   pdf:        'Gerando PDF...',
@@ -182,6 +183,26 @@ export default function ApplyProgressModal({ job, userId, onClose }: Props) {
         console.log('[ApplyModal] ATS profile created, profile_id:', atsProfileId)
 
         await supabase.from('profiles').upsert({ id: userId, ats_profile_id: atsProfileId })
+
+        // Poll profile status until READY (ATS Beater processes PDF asynchronously)
+        setStage('extracting')
+        console.log('[ApplyModal] polling profile status for profile_id:', atsProfileId)
+        for (let i = 0; i < 40; i++) {
+          if (cancelledRef.current) return
+          await new Promise((r) => setTimeout(r, 3000))
+          const profStatusRes = await fetch(`${ATS_URL}/profiles/${atsProfileId}/status`, {
+            headers: { Authorization: `Bearer ${atsJwt}` },
+          })
+          if (!profStatusRes.ok) {
+            console.warn('[ApplyModal] profile status poll non-ok:', profStatusRes.status, '(retry', i, ')')
+            continue
+          }
+          const { status: profStatus } = await profStatusRes.json() as { status: string }
+          console.log('[ApplyModal] profile status:', profStatus, '(poll', i, ')')
+          if (profStatus === 'FAILED') throw new Error('Falha ao processar o currículo. Tente novamente.')
+          if (profStatus === 'READY') break
+          if (i === 39) throw new Error('Tempo esgotado ao processar o currículo. Tente novamente.')
+        }
       }
 
       if (cancelledRef.current) return
@@ -283,7 +304,7 @@ export default function ApplyProgressModal({ job, userId, onClose }: Props) {
   }
 
   const isLoading = !['upload', 'ready', 'error'].includes(stage)
-  const progressStages: Stage[] = ['checking', 'preparing', 'creating', 'generating', 'pdf']
+  const progressStages: Stage[] = ['checking', 'preparing', 'extracting', 'creating', 'generating', 'pdf']
 
   return (
     <div

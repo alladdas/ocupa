@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Lock, Share2, EyeOff, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react'
 import { cn, getCompanyColor, getCompanyInitials } from '@/lib/utils'
 import FreshBadge from '@/components/FreshBadge'
@@ -79,7 +79,12 @@ function sanitizeHtml(html: string): string {
 
 export default function JobRow({ job, onHide }: JobRowProps) {
   const [expanded, setExpanded] = useState(false)
+  const [descExpanded, setDescExpanded] = useState(false)
   const [applyModalOpen, setApplyModalOpen] = useState(false)
+
+  useEffect(() => {
+    if (!expanded) setDescExpanded(false)
+  }, [expanded])
   const { openAuthModal } = useAuthModal()
   const { openUpgradeModal } = useUpgradeModal()
   const { user } = useUser()
@@ -228,12 +233,21 @@ export default function JobRow({ job, onHide }: JobRowProps) {
           style={{ borderColor: 'var(--d-border)', background: 'var(--d-surface)' }}
         >
           {job.description ? (
-            <div
-              className="prose prose-sm mb-3 max-w-none text-sm leading-relaxed"
-              style={{ color: 'var(--d-text-2)' }}
-              // eslint-disable-next-line react/no-danger
-              dangerouslySetInnerHTML={{ __html: sanitizeHtml(job.description) }}
-            />
+            <div className="mb-3">
+              <div
+                className={`prose prose-sm max-w-none text-sm leading-relaxed ${descExpanded ? '' : 'line-clamp-3'}`}
+                style={{ color: 'var(--d-text-2)' }}
+                // eslint-disable-next-line react/no-danger
+                dangerouslySetInnerHTML={{ __html: sanitizeHtml(job.description) }}
+              />
+              <button
+                onClick={() => setDescExpanded((v) => !v)}
+                className="mt-1.5 text-xs font-medium transition-opacity hover:opacity-70"
+                style={{ color: 'var(--d-accent-text)' }}
+              >
+                {descExpanded ? 'Ver menos' : 'Ver descrição completa'}
+              </button>
+            </div>
           ) : (
             <p className="mb-3 text-sm italic" style={{ color: 'var(--d-muted)' }}>
               Descrição não disponível.
