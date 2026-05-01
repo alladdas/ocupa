@@ -17,7 +17,12 @@ if config.config_file_name is not None:
 # Override with DATABASE_URL env var if set (for prod/Cloud Run)
 # Escape % for configparser interpolation (% is special in .ini files)
 if os.environ.get("DATABASE_URL"):
-    config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"].replace("%", "%%"))
+    url = os.environ["DATABASE_URL"]
+    # Railway/Supabase inject plain postgresql:// or postgres:// — normalize to asyncpg driver scheme
+    url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+    if url.startswith("postgresql://"):
+        url = "postgresql+asyncpg://" + url[len("postgresql://"):]
+    config.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
 
 target_metadata = Base.metadata
 
