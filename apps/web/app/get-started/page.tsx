@@ -127,10 +127,18 @@ export default function GetStartedPage() {
       markedCompleteRef.current = true
       void (async () => {
         const { data } = await getSupabaseBrowser().auth.getSession()
-        if (data?.session?.user) {
-          await getSupabaseBrowser()
-            .from('profiles')
-            .upsert({ id: data.session.user.id, onboarding_completed: true })
+        const userId = data?.session?.user?.id
+        if (!userId) return
+
+        const { error } = await getSupabaseBrowser()
+          .from('profiles')
+          .update({ onboarding_completed: true })
+          .eq('id', userId)
+
+        if (error) {
+          console.error('[onboarding] failed to mark complete:', error.message, error.code)
+        } else {
+          console.log('[onboarding] marked onboarding_completed=true for', userId)
         }
       })()
     }

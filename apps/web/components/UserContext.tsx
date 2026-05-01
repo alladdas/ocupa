@@ -85,7 +85,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const supabase = getSupabaseBrowser()
 
-    function enrichWithProfile(supabaseUser: User) {
+    function enrichWithProfile(supabaseUser: User, event: AuthChangeEvent) {
       const uid = supabaseUser.id
       currentUserIdRef.current = uid
 
@@ -97,13 +97,20 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         .then(({ data }: { data: { is_pro: boolean; ats_profile_id: number | null; onboarding_completed: boolean | null } | null }) => {
           if (currentUserIdRef.current !== uid) return  // user switched account mid-flight
 
+          console.log('[UserContext] onboarding_completed:', data?.onboarding_completed, '| event:', event)
+
           setUser(prev => prev ? {
             ...prev,
             isPro: data?.is_pro ?? prev.isPro,
             atsProfileId: data?.ats_profile_id ?? null,
           } : prev)
 
-          if (!data?.onboarding_completed && pathnameRef.current !== '/get-started') {
+          // Only redirect on a fresh sign-in — never on page reload (INITIAL_SESSION) or token refresh
+          if (
+            event === 'SIGNED_IN' &&
+            !data?.onboarding_completed &&
+            pathnameRef.current !== '/get-started'
+          ) {
             routerRef.current.push('/get-started')
           }
         })
@@ -115,7 +122,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
           if (session?.user) {
             setUser(deriveFromSupabase(session.user, false))
-            enrichWithProfile(session.user)
+            enrichWithProfile(session.user, event)
           }
         } else if (event === 'SIGNED_OUT') {
           currentUserIdRef.current = null
