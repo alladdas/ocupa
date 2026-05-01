@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import DashNav from '@/components/DashNav'
 import FilterSidebar from '@/components/FilterSidebar'
 import JobFeed from '@/components/JobFeed'
+import { useUser } from '@/components/UserContext'
+import { loadHiddenIds, hideJobRemote, unhideJobRemote } from '@/lib/preferences'
 import type { Job } from '@/lib/mock-data'
 import type { Filters } from '@/components/JobFilters'
 
@@ -27,7 +29,7 @@ function buildUrl(off: number, f: Filters): string {
   return `/api/jobs?${p}`
 }
 
-function loadHiddenIds(): Set<string> {
+function readLocalHiddenIds(): Set<string> {
   try {
     const raw = typeof window !== 'undefined' ? localStorage.getItem('hidden_jobs') : null
     return new Set<string>(raw ? (JSON.parse(raw) as string[]) : [])
@@ -36,7 +38,14 @@ function loadHiddenIds(): Set<string> {
   }
 }
 
+function saveLocalHiddenIds(ids: Set<string>): void {
+  try {
+    localStorage.setItem('hidden_jobs', JSON.stringify(Array.from(ids)))
+  } catch { /* storage unavailable */ }
+}
+
 export default function DashboardPage() {
+  const { user } = useUser()
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [jobs, setJobs] = useState<Job[]>([])
@@ -45,8 +54,30 @@ export default function DashboardPage() {
   const [hasMore, setHasMore] = useState(true)
   const [offset, setOffset] = useState(0)
   const [hiddenJobs, setHiddenJobs] = useState<Job[]>([])
-  const hiddenIdsRef = useRef<Set<string>>(loadHiddenIds())
+  const hiddenIdsRef = useRef<Set<string>>(readLocalHiddenIds())
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Ref so hideJob/unhideJob callbacks don't need user in their dep array
+  const userIdRef = useRef<string | null>(null)
+  userIdRef.current = user?.id ?? null
+
+  // When user logs in, merge their Supabase hidden IDs into the local set
+  // and immediately re-filter any already-loaded jobs
+  useEffect(() => {
+    if (!user?.id) return
+    loadHiddenIds(user.id).then((serverIds) => {
+      let changed = false
+      serverIds.forEach((id) => {
+        if (!hiddenIdsRef.current.has(id)) {
+          hiddenIdsRef.current.add(id)
+          changed = true
+        }
+      })
+      if (changed) {
+        saveLocalHiddenIds(hiddenIdsRef.current)
+        setJobs((prev) => prev.filter((j) => !hiddenIdsRef.current.has(j.id)))
+      }
+    })
+  }, [user?.id])
 
   const applyFetch = useCallback((off: number, append: boolean, currentFilters: Filters) => {
     if (append) setLoadingMore(true)
@@ -89,18 +120,20 @@ export default function DashboardPage() {
 
   const hideJob = useCallback((job: Job) => {
     hiddenIdsRef.current.add(job.id)
-    try {
-      localStorage.setItem('hidden_jobs', JSON.stringify(Array.from(hiddenIdsRef.current)))
-    } catch { /* storage unavailable */ }
+    saveLocalHiddenIds(hiddenIdsRef.current)
+    if (userIdRef.current) {
+      hideJobRemote(userIdRef.current, job.id)
+    }
     setJobs((prev) => prev.filter((j) => j.id !== job.id))
     setHiddenJobs((prev) => [job, ...prev])
   }, [])
 
   const unhideJob = useCallback((jobId: string) => {
     hiddenIdsRef.current.delete(jobId)
-    try {
-      localStorage.setItem('hidden_jobs', JSON.stringify(Array.from(hiddenIdsRef.current)))
-    } catch { /* storage unavailable */ }
+    saveLocalHiddenIds(hiddenIdsRef.current)
+    if (userIdRef.current) {
+      unhideJobRemote(userIdRef.current, jobId)
+    }
     setHiddenJobs((prev) => prev.filter((j) => j.id !== jobId))
   }, [])
 
