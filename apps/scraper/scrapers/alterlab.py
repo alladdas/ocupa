@@ -168,6 +168,36 @@ def _fetch_gupy_description(job_id: str) -> str:
     return ''
 
 
+def _fetch_job_page_description(url: str) -> str:
+    """Fetch a per-job detail page via AlterLab and return plain text description.
+    Used for iFood and dtidigital which have no public listing API.
+    Returns raw text (possibly noisy) or '' on failure.
+    """
+    response = _scrape(url, render_js=True, formats=['html'])
+    if not response:
+        return ''
+
+    raw_html: str = (
+        response.get('raw_html')
+        or response.get('content', {}).get('html')
+        or ''
+    )
+    if raw_html:
+        soup = BeautifulSoup(raw_html, 'html.parser')
+        for el in soup.find_all(['nav', 'header', 'footer', 'script', 'style', 'noscript']):
+            el.decompose()
+        text = soup.get_text(separator=' ', strip=True)
+        return text[:12000]
+
+    # Fall back to text field if HTML not available
+    text: str = (
+        response.get('content', {}).get('text')
+        or response.get('text')
+        or ''
+    )
+    return text[:12000]
+
+
 # ─── Source-specific parsers ─────────────────────────────────────────────────
 
 def _make_record(job_id: str, title: str, location: str, url: str, slug: str) -> dict:
@@ -733,14 +763,15 @@ def scrape_alterlab() -> int:
                     if existing.data:
                         continue
 
-                    # For Gupy company boards, fetch description from the Gupy API.
-                    # iFood / dtidigital / mercadolivre require per-job page scraping
-                    # (not implemented — listing pages don't carry descriptions).
+                    # Fetch per-job description for sources that don't include it in the listing.
                     if company_type == 'gupy_board' and not job.get('description'):
                         m = re.search(r'/jobs/(\d+)', job.get('url', ''))
                         if m:
                             job['description'] = _fetch_gupy_description(m.group(1))
                             time.sleep(0.2)
+                    elif slug in ('ifood', 'dtidigital') and not job.get('description') and job.get('url'):
+                        job['description'] = _fetch_job_page_description(job['url'])
+                        time.sleep(0.5)  # AlterLab rate limiting
 
                     supabase.table('scraped_jobs').insert(job).execute()
                     new_count += 1
