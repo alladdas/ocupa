@@ -101,29 +101,55 @@ def apply_greenhouse_browser(
         driver.get(url)
         time.sleep(3)
 
-        # ── Fill all text/email/tel inputs ────────────────────────────────────
-        known = {
-            'first_name': user.first_name,
-            'last_name':  user.last_name,
-            'email':      user.email,
-            'phone':      user.phone,
-        }
-        skip_names = set(known) | {''}
-        for field in driver.find_elements(
-            By.CSS_SELECTOR,
-            'input[type="text"], input[type="email"], input[type="tel"], '
-            'input[type="number"], textarea',
-        ):
-            name = field.get_attribute('name') or ''
+        # ── Scroll to the application form ────────────────────────────────────
+        try:
+            form = driver.find_element(
+                By.XPATH,
+                "//h2[contains(text(),'Apply for this job')] | //div[contains(@class,'application')]",
+            )
+            driver.execute_script("arguments[0].scrollIntoView();", form)
+            time.sleep(1)
+        except Exception:
+            pass
+
+        # ── Fill by placeholder ───────────────────────────────────────────────
+        def fill_by_placeholder(placeholder: str, value: str) -> None:
+            if not value:
+                return
             try:
-                if name in known:
-                    field.clear()
-                    field.send_keys(known[name])
-                elif name not in skip_names:
-                    label_text = _get_label_for(driver, field) or name
-                    answer = gpt.answer_text(label_text)
-                    field.clear()
-                    field.send_keys(answer)
+                el = driver.find_element(
+                    By.XPATH,
+                    f"//input[@placeholder='{placeholder}'] | //textarea[@placeholder='{placeholder}']",
+                )
+                el.clear()
+                el.send_keys(value)
+                logger.info(f"[greenhouse] filled {placeholder!r} = {value[:30]!r}")
+            except Exception:
+                pass
+
+        fill_by_placeholder('First Name *', user.first_name)
+        fill_by_placeholder('Last Name *', user.last_name)
+        fill_by_placeholder('Email *', user.email)
+        fill_by_placeholder('Phone', user.phone or '')
+        fill_by_placeholder('Location (City) *', user.city or '')
+
+        # ── Resume upload ─────────────────────────────────────────────────────
+        if resume_path:
+            try:
+                file_inputs = driver.find_elements(By.CSS_SELECTOR, 'input[type="file"]')
+                for fi in file_inputs:
+                    try:
+                        driver.execute_script(
+                            "arguments[0].style.display='block';"
+                            "arguments[0].style.visibility='visible';",
+                            fi,
+                        )
+                        fi.send_keys(resume_path)
+                        time.sleep(1)
+                        logger.info('[greenhouse] resume uploaded')
+                        break
+                    except Exception:
+                        pass
             except Exception:
                 pass
 
@@ -137,31 +163,48 @@ def apply_greenhouse_browser(
             chosen = gpt.answer_options(label_text, option_texts)
             try:
                 sel.select_by_visible_text(chosen)
+                logger.info(f"[greenhouse] select {label_text!r} = {chosen!r}")
             except Exception:
                 try:
                     sel.select_by_index(1)
                 except Exception:
                     pass
 
-        # ── Resume upload ─────────────────────────────────────────────────────
-        if resume_path:
+        # ── Custom text/textarea fields (questions) ───────────────────────────
+        known_placeholders = {
+            'First Name *', 'Last Name *', 'Email *', 'Phone', 'Location (City) *',
+        }
+        for field in driver.find_elements(By.CSS_SELECTOR, 'input[type="text"], textarea'):
+            placeholder = field.get_attribute('placeholder') or ''
+            if placeholder in known_placeholders:
+                continue
+            if (field.get_attribute('value') or '').strip():
+                continue  # already filled
+            label_text = placeholder or _get_label_for(driver, field) or ''
+            if not label_text:
+                continue
+            answer = gpt.answer_text(label_text)
             try:
-                file_inputs = driver.find_elements(By.CSS_SELECTOR, 'input[type="file"]')
-                if file_inputs:
-                    driver.execute_script("arguments[0].style.display='block'", file_inputs[0])
-                    file_inputs[0].send_keys(resume_path)
+                field.clear()
+                field.send_keys(answer)
+                logger.info(f"[greenhouse] custom field {label_text!r} = {answer[:30]!r}")
             except Exception:
                 pass
 
         # ── Guard: required fields must be filled ─────────────────────────────
         missing = []
-        for fname in ('first_name', 'email'):
+        for placeholder, label in (
+            ('First Name *', 'first_name'),
+            ('Email *', 'email'),
+        ):
             try:
-                el = driver.find_element(By.CSS_SELECTOR, f'input[name="{fname}"]')
+                el = driver.find_element(
+                    By.XPATH, f"//input[@placeholder='{placeholder}']"
+                )
                 val = (el.get_attribute('value') or '').strip()
-                logger.info(f'[greenhouse] {fname} value: {val!r}')
+                logger.info(f'[greenhouse] {label} value: {val!r}')
                 if not val:
-                    missing.append(fname)
+                    missing.append(label)
             except Exception:
                 pass
         if missing:
