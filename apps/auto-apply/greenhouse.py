@@ -165,10 +165,13 @@ def apply_greenhouse_browser(
 
         # Submit
         try:
-            submit_btn = driver.find_element(
-                By.CSS_SELECTOR, 'input[type="submit"], button[type="submit"]'
-            )
-            submit_btn.click()
+            try:
+                submit_btn = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+            except Exception:
+                submit_btn = driver.find_element(By.CSS_SELECTOR, "input[type='submit']")
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_btn)
+            time.sleep(1)
+            driver.execute_script("arguments[0].click();", submit_btn)
             time.sleep(3)
         except Exception as exc:
             return ApplyResult(
