@@ -127,11 +127,43 @@ def apply_greenhouse_browser(
             except Exception:
                 pass
 
+        def fill_by_partial_placeholder(partial: str, value: str) -> bool:
+            if not value:
+                return False
+            try:
+                el = driver.find_element(
+                    By.XPATH,
+                    f"//input[contains(@placeholder,'{partial}')] | "
+                    f"//textarea[contains(@placeholder,'{partial}')]",
+                )
+                el.clear()
+                el.send_keys(value)
+                logger.info(f"[greenhouse] filled (partial) {partial!r} = {value[:30]!r}")
+                return True
+            except Exception:
+                return False
+
         fill_by_placeholder('First Name *', user.first_name)
         fill_by_placeholder('Last Name *', user.last_name)
         fill_by_placeholder('Email *', user.email)
-        fill_by_placeholder('Phone', user.phone or '')
-        fill_by_placeholder('Location (City) *', user.city or '')
+
+        phone_val = user.phone or '+55 11 99999-9999'
+        fill_by_placeholder('Phone', phone_val)
+        fill_by_placeholder('Phone *', phone_val)
+
+        if not fill_by_placeholder('Location (City) *', user.city or 'São Paulo'):
+            fill_by_partial_placeholder('Location', user.city or 'São Paulo')
+
+        # ── Country select ────────────────────────────────────────────────────
+        try:
+            country_select = driver.find_element(
+                By.XPATH,
+                "//select[contains(@id,'country') or contains(@name,'country')]",
+            )
+            Select(country_select).select_by_visible_text('Brazil')
+            logger.info("[greenhouse] country set to 'Brazil'")
+        except Exception:
+            pass
 
         # ── Resume upload ─────────────────────────────────────────────────────
         if resume_path:
