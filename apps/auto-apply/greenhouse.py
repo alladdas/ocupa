@@ -316,7 +316,12 @@ def apply_greenhouse_browser(
 
             label_text = _get_react_select_label(dropdown)
             try:
-                dropdown.click()
+                driver.execute_script(
+                    "arguments[0].scrollIntoView({block: 'center', behavior: 'instant'});",
+                    dropdown,
+                )
+                time.sleep(0.3)
+                driver.execute_script("arguments[0].click();", dropdown)
                 time.sleep(0.5)
                 options = driver.find_elements(By.CSS_SELECTOR, 'div.select__option')
                 option_texts = [o.text.strip() for o in options if o.text.strip()]
@@ -324,12 +329,16 @@ def apply_greenhouse_browser(
                 if option_texts:
                     # Fixed list — ask GPT and click matching option
                     chosen = gpt.answer_options(label_text or 'select one', option_texts)
+                    clicked = False
                     for opt in options:
                         if opt.text.strip() == chosen:
-                            opt.click()
+                            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", opt)
+                            driver.execute_script("arguments[0].click();", opt)
+                            clicked = True
                             break
-                    else:
-                        options[0].click()
+                    if not clicked:
+                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", options[0])
+                        driver.execute_script("arguments[0].click();", options[0])
                         chosen = option_texts[0]
                     logger.info(f"[greenhouse] dropdown (fixed) {label_text!r} → {chosen!r}")
                 else:
@@ -341,7 +350,8 @@ def apply_greenhouse_browser(
                         suggestions = driver.find_elements(By.CSS_SELECTOR, 'div.select__option')
                         no_opts = driver.find_elements(By.CSS_SELECTOR, 'div.select__no-options-message, div.select__menu-notice')
                         if suggestions and not no_opts:
-                            suggestions[0].click()
+                            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", suggestions[0])
+                            driver.execute_script("arguments[0].click();", suggestions[0])
                             logger.info(f"[greenhouse] dropdown (autocomplete) {label_text!r} → {suggestions[0].text.strip()!r}")
                         else:
                             driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
