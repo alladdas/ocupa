@@ -172,7 +172,9 @@ def apply_greenhouse_browser(
         ):
             try:
                 el = driver.find_element(By.CSS_SELECTOR, f'input[name="{fname}"]')
-                if not (el.get_attribute('value') or '').strip():
+                val = (el.get_attribute('value') or '').strip()
+                logger.info(f'[greenhouse] {fname} value: {val!r}')
+                if not val:
                     missing.append(fname)
             except Exception:
                 pass  # field not present in this form — skip check
@@ -197,6 +199,14 @@ def apply_greenhouse_browser(
                 job_id=job_id, user_id=user_id, status='failed',
                 source='greenhouse', error_message=f'Submit click failed: {exc}',
             )
+
+        # Debug: screenshot + URL + page snippet after submit
+        try:
+            driver.save_screenshot('debug_submit.png')
+            logger.info(f'[greenhouse] post-submit URL: {driver.current_url}')
+            logger.info(f'[greenhouse] post-submit page: {driver.page_source[:1000]}')
+        except Exception:
+            pass
 
         # Confirm success by looking for thank-you keywords
         page = driver.page_source.lower()
