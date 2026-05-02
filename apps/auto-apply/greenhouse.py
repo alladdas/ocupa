@@ -99,7 +99,28 @@ def apply_greenhouse_browser(
         wait = WebDriverWait(driver, 20)
 
         driver.get(url)
-        time.sleep(2)
+        time.sleep(3)
+
+        # ── DOM inspection — dump page before touching anything ───────────────
+        driver.save_screenshot('debug_jobpage.png')
+        with open('debug_jobpage.html', 'w', encoding='utf-8') as f:
+            f.write(driver.page_source)
+        logger.info(f'[greenhouse] inspect URL: {driver.current_url}')
+        for el in driver.find_elements(By.CSS_SELECTOR, 'a, button'):
+            try:
+                logger.info(
+                    f"[greenhouse] tag={el.tag_name} "
+                    f"text={el.text[:50]!r} "
+                    f"href={el.get_attribute('href')!r} "
+                    f"id={el.get_attribute('id')!r}"
+                )
+            except Exception:
+                pass
+        return ApplyResult(
+            job_id=job_id, user_id=user_id, status='failed', source='greenhouse',
+            error_message='DOM inspection mode — stopped before clicking',
+        )
+        # ─────────────────────────────────────────────────────────────────────
 
         # Click "Apply" button if present (company career page before the form loads)
         try:
