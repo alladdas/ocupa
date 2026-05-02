@@ -101,88 +101,33 @@ def apply_greenhouse_browser(
         driver.get(url)
         time.sleep(3)
 
-        # ── DOM inspection — dump page before touching anything ───────────────
-        driver.save_screenshot('debug_jobpage.png')
-        with open('debug_jobpage.html', 'w', encoding='utf-8') as f:
-            f.write(driver.page_source)
-        logger.info(f'[greenhouse] inspect URL: {driver.current_url}')
-        for el in driver.find_elements(By.CSS_SELECTOR, 'a, button'):
-            try:
-                logger.info(
-                    f"[greenhouse] tag={el.tag_name} "
-                    f"text={el.text[:50]!r} "
-                    f"href={el.get_attribute('href')!r} "
-                    f"id={el.get_attribute('id')!r}"
-                )
-            except Exception:
-                pass
-        return ApplyResult(
-            job_id=job_id, user_id=user_id, status='failed', source='greenhouse',
-            error_message='DOM inspection mode — stopped before clicking',
-        )
-        # ─────────────────────────────────────────────────────────────────────
-
-        # Click "Apply" button if present (company career page before the form loads)
-        try:
-            apply_btn = driver.find_element(
-                By.CSS_SELECTOR,
-                "a[href*='greenhouse'], button[data-mapped='true'], "
-                "#apply_button, .apply-button, a[id*='apply'], button[id*='apply']",
-            )
-            driver.execute_script("arguments[0].click();", apply_btn)
-            logger.info('[greenhouse] clicked Apply button — waiting for iframe')
-            time.sleep(3)
-        except Exception:
-            pass  # URL goes directly to the form page — no Apply button needed
-
-        # Switch into the Greenhouse embedded iframe; wait up to 20s for it to appear
-        try:
-            iframe = wait.until(EC.presence_of_element_located((By.ID, 'grnhse_app')))
-            driver.switch_to.frame(iframe)
-            logger.info('[greenhouse] switched to grnhse_app iframe')
-            time.sleep(1)
-        except Exception:
-            logger.info('[greenhouse] no grnhse_app iframe found — assuming direct form page')
-
-        def fill_text(selector: str, value: str) -> None:
-            try:
-                el = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
-                el.clear()
-                el.send_keys(value)
-            except Exception:
-                pass
-
-        # Standard identity fields
-        fill_text('input[name="first_name"]', user.first_name)
-        fill_text('input[name="last_name"]', user.last_name)
-        fill_text('input[name="email"]', user.email)
-        fill_text('input[name="phone"]', user.phone)
-
-        # Resume file upload
-        if resume_path:
-            try:
-                file_input = driver.find_element(By.CSS_SELECTOR, 'input[type="file"]')
-                file_input.send_keys(resume_path)
-            except Exception:
-                pass
-
-        # Custom text fields and textareas
-        skip_names = {'first_name', 'last_name', 'email', 'phone', ''}
+        # ── Fill all text/email/tel inputs ────────────────────────────────────
+        known = {
+            'first_name': user.first_name,
+            'last_name':  user.last_name,
+            'email':      user.email,
+            'phone':      user.phone,
+        }
+        skip_names = set(known) | {''}
         for field in driver.find_elements(
-            By.CSS_SELECTOR, 'input[type="text"], input[type="number"], textarea'
+            By.CSS_SELECTOR,
+            'input[type="text"], input[type="email"], input[type="tel"], '
+            'input[type="number"], textarea',
         ):
             name = field.get_attribute('name') or ''
-            if name in skip_names:
-                continue
-            label_text = _get_label_for(driver, field) or name
-            answer = gpt.answer_text(label_text)
             try:
-                field.clear()
-                field.send_keys(answer)
+                if name in known:
+                    field.clear()
+                    field.send_keys(known[name])
+                elif name not in skip_names:
+                    label_text = _get_label_for(driver, field) or name
+                    answer = gpt.answer_text(label_text)
+                    field.clear()
+                    field.send_keys(answer)
             except Exception:
                 pass
 
-        # Select dropdowns
+        # ── Select dropdowns ──────────────────────────────────────────────────
         for sel_el in driver.find_elements(By.CSS_SELECTOR, 'select'):
             label_text = _get_label_for(driver, sel_el) or sel_el.get_attribute('name') or ''
             sel = Select(sel_el)
@@ -198,13 +143,19 @@ def apply_greenhouse_browser(
                 except Exception:
                     pass
 
-        # Guard: ensure required fields are filled before submitting
+        # ── Resume upload ─────────────────────────────────────────────────────
+        if resume_path:
+            try:
+                file_inputs = driver.find_elements(By.CSS_SELECTOR, 'input[type="file"]')
+                if file_inputs:
+                    driver.execute_script("arguments[0].style.display='block'", file_inputs[0])
+                    file_inputs[0].send_keys(resume_path)
+            except Exception:
+                pass
+
+        # ── Guard: required fields must be filled ─────────────────────────────
         missing = []
-        for fname, expected in (
-            ("first_name", user.first_name),
-            ("last_name", user.last_name),
-            ("email", user.email),
-        ):
+        for fname in ('first_name', 'email'):
             try:
                 el = driver.find_element(By.CSS_SELECTOR, f'input[name="{fname}"]')
                 val = (el.get_attribute('value') or '').strip()
@@ -212,41 +163,42 @@ def apply_greenhouse_browser(
                 if not val:
                     missing.append(fname)
             except Exception:
-                pass  # field not present in this form — skip check
+                pass
         if missing:
             return ApplyResult(
                 job_id=job_id, user_id=user_id, status='failed', source='greenhouse',
                 error_message=f'Form fields not filled: {", ".join(missing)}',
             )
 
-        # Submit
+        # ── Submit ────────────────────────────────────────────────────────────
         try:
             try:
-                submit_btn = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+                submit_btn = driver.find_element(
+                    By.XPATH, "//button[contains(., 'Submit application')]"
+                )
             except Exception:
-                submit_btn = driver.find_element(By.CSS_SELECTOR, "input[type='submit']")
+                try:
+                    submit_btn = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+                except Exception:
+                    submit_btn = driver.find_element(By.CSS_SELECTOR, "input[type='submit']")
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_btn)
             time.sleep(1)
             driver.execute_script("arguments[0].click();", submit_btn)
-            time.sleep(3)
+            time.sleep(5)
         except Exception as exc:
             return ApplyResult(
                 job_id=job_id, user_id=user_id, status='failed',
                 source='greenhouse', error_message=f'Submit click failed: {exc}',
             )
 
-        # Debug: screenshot + URL + page snippet after submit
-        try:
-            driver.save_screenshot('debug_submit.png')
-            logger.info(f'[greenhouse] post-submit URL: {driver.current_url}')
-            logger.info(f'[greenhouse] post-submit page: {driver.page_source[:1000]}')
-        except Exception:
-            pass
+        # ── Post-submit debug + confirmation ──────────────────────────────────
+        driver.save_screenshot('debug_submit.png')
+        logger.info(f'[greenhouse] post-submit URL: {driver.current_url}')
+        logger.info(f'[greenhouse] post-submit page: {driver.page_source[:1000]}')
 
-        # Confirm success by looking for thank-you keywords
         page = driver.page_source.lower()
         confirmed = any(kw in page for kw in (
-            'thank you', 'obrigado', 'application submitted', 'candidatura enviada',
+            'thank', 'obrigado', 'submitted', 'received', 'confirmation',
         ))
         logger.info(f'[greenhouse] browser submit confirmed={confirmed}')
 
