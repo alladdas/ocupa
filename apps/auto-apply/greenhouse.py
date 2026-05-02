@@ -316,7 +316,6 @@ def apply_greenhouse_browser(
 
             label_text = _get_react_select_label(dropdown)
             try:
-                from selenium.common.exceptions import TimeoutException as _TE
                 driver.execute_script(
                     "arguments[0].scrollIntoView({block: 'center', behavior: 'instant'});",
                     dropdown,
@@ -324,55 +323,37 @@ def apply_greenhouse_browser(
                 time.sleep(0.3)
                 driver.execute_script("arguments[0].click();", dropdown)
 
+                # All Greenhouse dropdowns are fixed lists — just wait for them to render
                 try:
-                    # Wait up to 3s for options to appear — if they do it's a fixed list
-                    options = WebDriverWait(driver, 3).until(
+                    options = WebDriverWait(driver, 2).until(
                         EC.presence_of_all_elements_located(
                             (By.CSS_SELECTOR, 'div.select__option')
                         )
                     )
-                    option_texts = [o.text.strip() for o in options if o.text.strip()]
-                    if option_texts:
-                        chosen = gpt.answer_options(label_text or 'select one', option_texts)
-                        clicked = False
-                        for opt in options:
-                            if (chosen.lower() in opt.text.lower()
-                                    or opt.text.lower() in chosen.lower()):
-                                driver.execute_script(
-                                    "arguments[0].scrollIntoView({block: 'center'});", opt
-                                )
-                                driver.execute_script("arguments[0].click();", opt)
-                                logger.info(f"[greenhouse] dropdown {label_text[:50]!r} → {opt.text!r}")
-                                clicked = True
-                                break
-                        if not clicked:
-                            driver.execute_script("arguments[0].click();", options[0])
-                            logger.info(f"[greenhouse] dropdown {label_text[:50]!r} → fallback {options[0].text!r}")
-                    else:
-                        raise _TE('empty option list')
-                except _TE:
-                    # No options after 3s → autocomplete mode
-                    logger.info(f"[greenhouse] dropdown {label_text[:50]!r} → autocomplete mode")
-                    try:
-                        search_input = dropdown.find_element(By.CSS_SELECTOR, 'input')
-                        search_input.send_keys(label_text[:20] if label_text else 'a')
-                        time.sleep(1)
-                        suggestions = driver.find_elements(By.CSS_SELECTOR, 'div.select__option')
-                        no_opts = driver.find_elements(
-                            By.CSS_SELECTOR,
-                            'div.select__no-options-message, div.select__menu-notice',
+                except Exception:
+                    options = []
+
+                option_texts = [o.text.strip() for o in options if o.text.strip()]
+                if not option_texts:
+                    driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
+                    logger.info(f"[greenhouse] dropdown {label_text[:50]!r} → no options, skipped")
+                    continue
+
+                chosen = gpt.answer_options(label_text or 'select one', option_texts)
+                clicked = False
+                for opt in options:
+                    if (chosen.lower() in opt.text.lower()
+                            or opt.text.lower() in chosen.lower()):
+                        driver.execute_script(
+                            "arguments[0].scrollIntoView({block: 'center'});", opt
                         )
-                        if suggestions and not no_opts:
-                            driver.execute_script(
-                                "arguments[0].scrollIntoView({block: 'center'});", suggestions[0]
-                            )
-                            driver.execute_script("arguments[0].click();", suggestions[0])
-                            logger.info(f"[greenhouse] dropdown (autocomplete) {label_text[:50]!r} → {suggestions[0].text.strip()!r}")
-                        else:
-                            driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
-                            logger.info(f"[greenhouse] dropdown (autocomplete) {label_text[:50]!r} → no options, skipped")
-                    except Exception:
-                        driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
+                        driver.execute_script("arguments[0].click();", opt)
+                        logger.info(f"[greenhouse] dropdown {label_text[:50]!r} → {opt.text!r}")
+                        clicked = True
+                        break
+                if not clicked:
+                    driver.execute_script("arguments[0].click();", options[0])
+                    logger.info(f"[greenhouse] dropdown {label_text[:50]!r} → fallback {options[0].text!r}")
 
                 time.sleep(0.3)
             except Exception as exc:
