@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # Rough years-of-experience by seniority, used as numeric fallback
 _SENIORITY_YEARS = {'junior': 1, 'pleno': 3, 'senior': 6}
 
-_MODEL = 'gemini-2.0-flash'
+_MODEL = 'gemini-1.5-flash'
 
 
 class GPTAnswerer:

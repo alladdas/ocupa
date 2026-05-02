@@ -4,13 +4,16 @@ Greenhouse auto-apply — uses the public Greenhouse Boards API.
 POST https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs/{job_id}
 as multipart/form-data.  Most public boards accept unauthenticated submissions;
 if the company enabled Application Form Token enforcement, the call returns 401
-and status='failed' is returned so the caller can surface the error.
+and a Selenium browser fallback is attempted automatically.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import re
+import tempfile
+import time
 from typing import Optional
 
 import requests
@@ -22,25 +25,184 @@ logger = logging.getLogger(__name__)
 
 BOARDS_API = 'https://boards-api.greenhouse.io/v1/boards'
 
-# Field names Greenhouse uses for standard profile data — answer directly from profile
 _FIXED_FIELDS = {
     'first_name', 'last_name', 'email', 'phone',
-    'resume', 'cover_letter',              # file fields — handled separately
-    'resume_text', 'cover_letter_content', # text aliases seen on some boards
+    'resume', 'cover_letter',
+    'resume_text', 'cover_letter_content',
 }
 
 
 def _parse_url(url: str) -> tuple[str, str]:
-    """Extract (board_token, numeric_job_id) from a Greenhouse job URL.
-
-    Handles both:
-      https://boards.greenhouse.io/{token}/jobs/{id}
-      https://job-boards.greenhouse.io/{token}/jobs/{id}
-    """
+    """Extract (board_token, numeric_job_id) from a Greenhouse job URL."""
     m = re.search(r'greenhouse\.io/([^/?#]+)/jobs/(\d+)', url or '')
     if not m:
         raise ValueError(f'Cannot parse Greenhouse URL: {url!r}')
     return m.group(1), m.group(2)
+
+
+def _get_label_for(driver, element) -> str:
+    """Find the <label> text associated with a form element."""
+    from selenium.webdriver.common.by import By
+    try:
+        el_id = element.get_attribute('id')
+        if el_id:
+            labels = driver.find_elements(By.CSS_SELECTOR, f'label[for="{el_id}"]')
+            if labels:
+                return labels[0].text.strip()
+        parent = element.find_element(By.XPATH, 'ancestor::label[1]')
+        return parent.text.strip()
+    except Exception:
+        return ''
+
+
+def apply_greenhouse_browser(
+    job: dict,
+    user: UserProfile,
+    gemini_api_key: str,
+    user_id: str = '',
+) -> ApplyResult:
+    """Browser-based fallback for Greenhouse when the API returns 401."""
+    try:
+        import undetected_chromedriver as uc
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.webdriver.support.ui import Select, WebDriverWait
+    except ImportError as exc:
+        return ApplyResult(
+            job_id=str(job.get('id', '')), user_id=user_id, status='failed',
+            source='greenhouse', error_message=f'Browser fallback unavailable: {exc}',
+        )
+
+    job_id = str(job.get('id', ''))
+    url = job.get('url', '')
+    description = job.get('description', '')
+    gpt = GPTAnswerer(gemini_api_key, user, description)
+
+    resume_path: Optional[str] = None
+    driver = None
+    try:
+        # Write resume to a temp file so Selenium can upload it
+        if user.resume_pdf_bytes:
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
+            tmp.write(user.resume_pdf_bytes)
+            tmp.close()
+            resume_path = tmp.name
+
+        options = uc.ChromeOptions()
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        driver = uc.Chrome(options=options, headless=False)
+        wait = WebDriverWait(driver, 15)
+
+        driver.get(url)
+        time.sleep(2)
+
+        # Switch into the Greenhouse embedded iframe if present
+        try:
+            iframe = driver.find_element(By.CSS_SELECTOR, 'iframe#grnhse_app')
+            driver.switch_to.frame(iframe)
+            time.sleep(1)
+        except Exception:
+            pass
+
+        def fill_text(selector: str, value: str) -> None:
+            try:
+                el = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
+                el.clear()
+                el.send_keys(value)
+            except Exception:
+                pass
+
+        # Standard identity fields
+        fill_text('input[name="first_name"]', user.first_name)
+        fill_text('input[name="last_name"]', user.last_name)
+        fill_text('input[name="email"]', user.email)
+        fill_text('input[name="phone"]', user.phone)
+
+        # Resume file upload
+        if resume_path:
+            try:
+                file_input = driver.find_element(By.CSS_SELECTOR, 'input[type="file"]')
+                file_input.send_keys(resume_path)
+            except Exception:
+                pass
+
+        # Custom text fields and textareas
+        skip_names = {'first_name', 'last_name', 'email', 'phone', ''}
+        for field in driver.find_elements(
+            By.CSS_SELECTOR, 'input[type="text"], input[type="number"], textarea'
+        ):
+            name = field.get_attribute('name') or ''
+            if name in skip_names:
+                continue
+            label_text = _get_label_for(driver, field) or name
+            answer = gpt.answer_text(label_text)
+            try:
+                field.clear()
+                field.send_keys(answer)
+            except Exception:
+                pass
+
+        # Select dropdowns
+        for sel_el in driver.find_elements(By.CSS_SELECTOR, 'select'):
+            label_text = _get_label_for(driver, sel_el) or sel_el.get_attribute('name') or ''
+            sel = Select(sel_el)
+            option_texts = [o.text for o in sel.options if o.get_attribute('value')]
+            if not option_texts:
+                continue
+            chosen = gpt.answer_options(label_text, option_texts)
+            try:
+                sel.select_by_visible_text(chosen)
+            except Exception:
+                try:
+                    sel.select_by_index(1)
+                except Exception:
+                    pass
+
+        # Submit
+        try:
+            submit_btn = driver.find_element(
+                By.CSS_SELECTOR, 'input[type="submit"], button[type="submit"]'
+            )
+            submit_btn.click()
+            time.sleep(3)
+        except Exception as exc:
+            return ApplyResult(
+                job_id=job_id, user_id=user_id, status='failed',
+                source='greenhouse', error_message=f'Submit click failed: {exc}',
+            )
+
+        # Confirm success by looking for thank-you keywords
+        page = driver.page_source.lower()
+        confirmed = any(kw in page for kw in (
+            'thank you', 'obrigado', 'application submitted', 'candidatura enviada',
+        ))
+        logger.info(f'[greenhouse] browser submit confirmed={confirmed}')
+
+        if confirmed:
+            return ApplyResult(job_id=job_id, user_id=user_id, status='success', source='greenhouse')
+        return ApplyResult(
+            job_id=job_id, user_id=user_id, status='failed', source='greenhouse',
+            error_message='No confirmation message found after browser submit',
+        )
+
+    except Exception as exc:
+        logger.exception(f'[greenhouse] browser fallback error: {exc}')
+        return ApplyResult(
+            job_id=job_id, user_id=user_id, status='failed',
+            source='greenhouse', error_message=f'Browser error: {exc}',
+        )
+    finally:
+        if driver:
+            try:
+                driver.quit()
+            except Exception:
+                pass
+        if resume_path:
+            try:
+                os.unlink(resume_path)
+            except Exception:
+                pass
 
 
 def apply_greenhouse(
@@ -84,7 +246,6 @@ def apply_greenhouse(
     gpt = GPTAnswerer(gemini_api_key, user, description)
     form_data: dict[str, object] = {}
     include_resume = False
-    include_cover_letter = False
 
     for question in questions:
         label: str = question.get('label', '')
@@ -94,7 +255,6 @@ def apply_greenhouse(
             if not name:
                 continue
 
-            # Standard identity fields — fill directly from profile
             if name == 'first_name':
                 form_data[name] = user.first_name
             elif name == 'last_name':
@@ -106,9 +266,8 @@ def apply_greenhouse(
             elif name == 'resume':
                 include_resume = True
             elif name == 'cover_letter':
-                include_cover_letter = True  # skip — we don't generate cover letters here
+                pass  # skip — not generated here
 
-            # Custom question types
             elif ftype in ('input_text', 'textarea'):
                 form_data[name] = gpt.answer_text(label)
                 logger.debug(f'[greenhouse] text "{label}" → "{form_data[name][:60]}"')
@@ -116,11 +275,9 @@ def apply_greenhouse(
             elif ftype in ('multi_value_single_select', 'multi_value_multi_select'):
                 values: list[dict] = field.get('values', [])
                 if not values:
-                    logger.debug(f'[greenhouse] skip "{label}" — no values list')
                     continue
                 option_labels = [v.get('label', '') for v in values]
                 chosen_label = gpt.answer_options(label, option_labels)
-                # Greenhouse expects the numeric `value` integer, not the label string
                 chosen_value = next(
                     (v['value'] for v in values if v.get('label') == chosen_label),
                     values[0]['value'],
@@ -151,6 +308,12 @@ def apply_greenhouse(
             return ApplyResult(
                 job_id=job_id, user_id=user_id, status='success', source='greenhouse',
             )
+
+        # ── 401 → browser fallback ─────────────────────────────────────────
+        if resp.status_code == 401:
+            logger.warning(f'[greenhouse] 401 on {board_token}/{gh_job_id} — trying browser fallback')
+            return apply_greenhouse_browser(job, user, gemini_api_key, user_id)
+
         return ApplyResult(
             job_id=job_id, user_id=user_id, status='failed', source='greenhouse',
             error_message=f'HTTP {resp.status_code}: {resp.text[:300]}',
