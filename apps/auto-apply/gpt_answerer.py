@@ -114,8 +114,12 @@ class GPTAnswerer:
         prompt = (
             f'PERGUNTA DO FORMULÁRIO: {question}\n\n'
             f'OPÇÕES DISPONÍVEIS:\n{opts_str}\n\n'
+            'Contexto adicional do candidato: brasileiro, residente em São Paulo, Brasil. '
+            'Brasileiros são considerados latinos (Hispanic/Latino = Yes). '
+            'Para perguntas sobre autorização de trabalho nos EUA: o candidato precisaria de visto. '
             'Escolha EXATAMENTE UMA das opções acima que melhor se aplica ao candidato. '
-            'Responda APENAS com o texto exato de uma das opções, sem explicações.'
+            'Responda APENAS com o texto exato de uma das opções, sem pontuação extra, '
+            'sem explicações e sem adicionar nenhum texto além da opção escolhida.'
         )
         result = self._call(prompt)
 

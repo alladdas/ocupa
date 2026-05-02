@@ -274,9 +274,7 @@ def apply_greenhouse_browser(
 
         # ── React Select dropdowns (custom questions) ─────────────────────────
         def _get_react_select_label(dropdown_el) -> str:
-            """Walk up the DOM to find the question label for a React Select control."""
             try:
-                # Label is usually a sibling or ancestor — go up two levels then search
                 container = driver.execute_script(
                     "return arguments[0].closest('.field, .select, [class*=\"question\"]')"
                     " || arguments[0].parentElement.parentElement;",
@@ -296,64 +294,71 @@ def apply_greenhouse_browser(
         for dropdown in driver.find_elements(By.CSS_SELECTOR, 'div.select__control'):
             # Skip country dropdown — already handled
             try:
-                parent_class = driver.execute_script(
-                    "return arguments[0].closest('.phone-input__country') !== null;", dropdown
+                in_country = dropdown.find_element(
+                    By.XPATH, 'ancestor::*[contains(@class,"phone-input__country")]'
                 )
-                if parent_class:
+                continue
+            except Exception:
+                pass
+
+            # Skip if already has a selected value
+            try:
+                value_el = dropdown.find_element(By.CSS_SELECTOR, 'div.select__single-value')
+                if value_el.text.strip():
                     continue
             except Exception:
                 pass
 
-            # Skip if already has a value (placeholder div is gone)
-            try:
-                placeholder_el = dropdown.find_element(
-                    By.CSS_SELECTOR, 'div.select__placeholder'
-                )
-                if not placeholder_el.is_displayed():
-                    continue
-            except Exception:
-                continue  # no placeholder means already selected
-
             label_text = _get_react_select_label(dropdown)
             try:
                 driver.execute_script(
-                    "arguments[0].scrollIntoView({block: 'center', behavior: 'instant'});",
+                    "arguments[0].scrollIntoView({block:'center',behavior:'instant'});",
                     dropdown,
                 )
                 time.sleep(0.3)
                 driver.execute_script("arguments[0].click();", dropdown)
 
-                # All Greenhouse dropdowns are fixed lists — just wait for them to render
+                # Wait for the open menu and collect options — never type into the input
                 try:
-                    options = WebDriverWait(driver, 2).until(
-                        EC.presence_of_all_elements_located(
-                            (By.CSS_SELECTOR, 'div.select__option')
+                    WebDriverWait(driver, 3).until(
+                        EC.presence_of_element_located(
+                            (By.CSS_SELECTOR,
+                             'div[class*="select__menu"] div[class*="select__option"]')
                         )
                     )
                 except Exception:
-                    options = []
-
-                option_texts = [o.text.strip() for o in options if o.text.strip()]
-                if not option_texts:
                     driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
                     logger.info(f"[greenhouse] dropdown {label_text[:50]!r} → no options, skipped")
                     continue
 
+                options = driver.find_elements(
+                    By.CSS_SELECTOR,
+                    'div[class*="select__menu"] div[class*="select__option"]',
+                )
+                option_texts = [o.text.strip() for o in options if o.text.strip()]
+                if not option_texts:
+                    driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
+                    logger.info(f"[greenhouse] dropdown {label_text[:50]!r} → empty menu, skipped")
+                    continue
+
                 chosen = gpt.answer_options(label_text or 'select one', option_texts)
+
                 clicked = False
                 for opt in options:
-                    if (chosen.lower() in opt.text.lower()
-                            or opt.text.lower() in chosen.lower()):
+                    opt_text = opt.text.strip()
+                    if (opt_text.lower() == chosen.lower()
+                            or chosen.lower() in opt_text.lower()
+                            or opt_text.lower() in chosen.lower()):
                         driver.execute_script(
-                            "arguments[0].scrollIntoView({block: 'center'});", opt
+                            "arguments[0].scrollIntoView({block:'center'});", opt
                         )
                         driver.execute_script("arguments[0].click();", opt)
-                        logger.info(f"[greenhouse] dropdown {label_text[:50]!r} → {opt.text!r}")
+                        logger.info(f"[greenhouse] dropdown {label_text[:50]!r} → {opt_text!r}")
                         clicked = True
                         break
                 if not clicked:
                     driver.execute_script("arguments[0].click();", options[0])
-                    logger.info(f"[greenhouse] dropdown {label_text[:50]!r} → fallback {options[0].text!r}")
+                    logger.info(f"[greenhouse] dropdown {label_text[:50]!r} → fallback {options[0].text.strip()!r}")
 
                 time.sleep(0.3)
             except Exception as exc:
