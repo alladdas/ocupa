@@ -198,9 +198,17 @@ def apply_greenhouse_browser(
             loc.click()
             loc.clear()
             loc.send_keys(user.city or 'São Paulo')
-            time.sleep(0.5)
-            loc.send_keys(Keys.ESCAPE)
-            logger.info(f'[greenhouse] location filled: {user.city or "São Paulo"}')
+            time.sleep(1)
+            try:
+                first_option = wait.until(EC.presence_of_element_located((
+                    By.CSS_SELECTOR,
+                    'div.select__option, [class*="suggestion"], [class*="autocomplete-option"]',
+                )))
+                first_option.click()
+                logger.info(f'[greenhouse] location autocomplete selected: {user.city or "São Paulo"}')
+            except Exception:
+                loc.send_keys(Keys.ESCAPE)
+                logger.info(f'[greenhouse] location filled (no autocomplete): {user.city or "São Paulo"}')
         except Exception as exc:
             logger.warning(f'[greenhouse] location fill failed: {exc}')
             if not fill_by_placeholder('Location (City) *', user.city or 'São Paulo'):
@@ -311,25 +319,41 @@ def apply_greenhouse_browser(
                 dropdown.click()
                 time.sleep(0.5)
                 options = driver.find_elements(By.CSS_SELECTOR, 'div.select__option')
-                option_texts = [o.text for o in options if o.text.strip()]
-                if not option_texts:
-                    from selenium.webdriver.common.keys import Keys as _Keys
-                    driver.find_element(By.TAG_NAME, 'body').send_keys(_Keys.ESCAPE)
-                    continue
-                chosen = gpt.answer_options(label_text or 'select one', option_texts)
-                for opt in options:
-                    if opt.text.strip() == chosen:
-                        opt.click()
-                        break
+                option_texts = [o.text.strip() for o in options if o.text.strip()]
+
+                if option_texts:
+                    # Fixed list — ask GPT and click matching option
+                    chosen = gpt.answer_options(label_text or 'select one', option_texts)
+                    for opt in options:
+                        if opt.text.strip() == chosen:
+                            opt.click()
+                            break
+                    else:
+                        options[0].click()
+                        chosen = option_texts[0]
+                    logger.info(f"[greenhouse] dropdown (fixed) {label_text!r} → {chosen!r}")
                 else:
-                    options[0].click()
-                logger.info(f"[greenhouse] dropdown {label_text!r} → {chosen!r}")
+                    # Autocomplete — type a value, wait for suggestions, click first
+                    try:
+                        search_input = dropdown.find_element(By.CSS_SELECTOR, 'input')
+                        search_input.send_keys(label_text[:20] if label_text else 'a')
+                        time.sleep(1)
+                        suggestions = driver.find_elements(By.CSS_SELECTOR, 'div.select__option')
+                        no_opts = driver.find_elements(By.CSS_SELECTOR, 'div.select__no-options-message, div.select__menu-notice')
+                        if suggestions and not no_opts:
+                            suggestions[0].click()
+                            logger.info(f"[greenhouse] dropdown (autocomplete) {label_text!r} → {suggestions[0].text.strip()!r}")
+                        else:
+                            driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
+                            logger.info(f"[greenhouse] dropdown (autocomplete) {label_text!r} → no options, skipped")
+                    except Exception:
+                        driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
+
                 time.sleep(0.3)
             except Exception as exc:
                 logger.warning(f'[greenhouse] dropdown failed ({label_text!r}): {exc}')
                 try:
-                    from selenium.webdriver.common.keys import Keys as _Keys
-                    driver.find_element(By.TAG_NAME, 'body').send_keys(_Keys.ESCAPE)
+                    driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
                 except Exception:
                     pass
 
