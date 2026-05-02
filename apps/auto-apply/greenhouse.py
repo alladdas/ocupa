@@ -255,7 +255,7 @@ def apply_greenhouse_browser(
         known_placeholders = {
             'First Name *', 'Last Name *', 'Email *', 'Phone', 'Location (City) *',
         }
-        for field in driver.find_elements(By.CSS_SELECTOR, 'input[type="text"], textarea'):
+        for field in driver.find_elements(By.CSS_SELECTOR, 'input[type="text"]:not(.select__input), textarea'):
             placeholder = field.get_attribute('placeholder') or ''
             if placeholder in known_placeholders:
                 continue
