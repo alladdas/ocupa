@@ -96,18 +96,32 @@ def apply_greenhouse_browser(
         options.add_argument('--disable-dev-shm-usage')
         service = Service(ChromeDriverManager().install())
         driver = uc.Chrome(options=options, driver_executable_path=service.path)
-        wait = WebDriverWait(driver, 15)
+        wait = WebDriverWait(driver, 20)
 
         driver.get(url)
         time.sleep(2)
 
-        # Switch into the Greenhouse embedded iframe if present
+        # Click "Apply" button if present (company career page before the form loads)
         try:
-            iframe = driver.find_element(By.CSS_SELECTOR, 'iframe#grnhse_app')
+            apply_btn = driver.find_element(
+                By.CSS_SELECTOR,
+                "a[href*='greenhouse'], button[data-mapped='true'], "
+                "#apply_button, .apply-button, a[id*='apply'], button[id*='apply']",
+            )
+            driver.execute_script("arguments[0].click();", apply_btn)
+            logger.info('[greenhouse] clicked Apply button — waiting for iframe')
+            time.sleep(3)
+        except Exception:
+            pass  # URL goes directly to the form page — no Apply button needed
+
+        # Switch into the Greenhouse embedded iframe; wait up to 20s for it to appear
+        try:
+            iframe = wait.until(EC.presence_of_element_located((By.ID, 'grnhse_app')))
             driver.switch_to.frame(iframe)
+            logger.info('[greenhouse] switched to grnhse_app iframe')
             time.sleep(1)
         except Exception:
-            pass
+            logger.info('[greenhouse] no grnhse_app iframe found — assuming direct form page')
 
         def fill_text(selector: str, value: str) -> None:
             try:
