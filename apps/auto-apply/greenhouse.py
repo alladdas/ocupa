@@ -165,16 +165,28 @@ def apply_greenhouse_browser(
         except Exception as exc:
             logger.warning(f'[greenhouse] country select failed: {exc}')
 
-        # ── Phone — input inside fieldset.phone-input ─────────────────────────
-        try:
-            phone_input = driver.find_element(
-                By.CSS_SELECTOR, 'fieldset.phone-input div.phone-input__number input'
-            )
-            phone_input.clear()
-            phone_input.send_keys(user.phone or '11999999999')
-            logger.info('[greenhouse] phone filled')
-        except Exception as exc:
-            logger.warning(f'[greenhouse] phone fill failed: {exc}')
+        # ── Phone — try multiple selectors (structure varies by board) ──────────
+        _phone_selectors = [
+            'fieldset.phone-input div.phone-input__number input',
+            'input[type="tel"]',
+            'input[name*="phone"]',
+            'input[id*="phone"]',
+            'input[placeholder*="Phone"]',
+            'input[placeholder*="phone"]',
+        ]
+        _phone_filled = False
+        for _sel in _phone_selectors:
+            try:
+                _el = driver.find_element(By.CSS_SELECTOR, _sel)
+                _el.clear()
+                _el.send_keys(user.phone or '11999999999')
+                logger.info(f'[greenhouse] phone filled via {_sel!r}')
+                _phone_filled = True
+                break
+            except Exception:
+                continue
+        if not _phone_filled:
+            logger.warning('[greenhouse] phone not filled — no selector matched')
 
         # ── Location (City) — may use autocomplete widget ─────────────────────
         from selenium.webdriver.common.keys import Keys
@@ -288,7 +300,7 @@ def apply_greenhouse_browser(
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_btn)
             time.sleep(1)
             driver.execute_script("arguments[0].click();", submit_btn)
-            time.sleep(5)
+            time.sleep(8)
         except Exception as exc:
             return ApplyResult(
                 job_id=job_id, user_id=user_id, status='failed',
@@ -299,6 +311,14 @@ def apply_greenhouse_browser(
         driver.save_screenshot('debug_submit.png')
         logger.info(f'[greenhouse] post-submit URL: {driver.current_url}')
         logger.info(f'[greenhouse] post-submit page: {driver.page_source[:1000]}')
+        for ef in driver.find_elements(
+            By.CSS_SELECTOR, '.field-error, [class*="error"], [class*="required"]'
+        )[:5]:
+            try:
+                if ef.text.strip():
+                    logger.warning(f'[greenhouse] form error: {ef.text[:100]}')
+            except Exception:
+                pass
 
         page = driver.page_source.lower()
         confirmed = any(kw in page for kw in (
