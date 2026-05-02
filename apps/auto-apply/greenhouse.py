@@ -147,23 +147,52 @@ def apply_greenhouse_browser(
         fill_by_placeholder('Last Name *', user.last_name)
         fill_by_placeholder('Email *', user.email)
 
-        phone_val = user.phone or '+55 11 99999-9999'
-        fill_by_placeholder('Phone', phone_val)
-        fill_by_placeholder('Phone *', phone_val)
-
-        if not fill_by_placeholder('Location (City) *', user.city or 'São Paulo'):
-            fill_by_partial_placeholder('Location', user.city or 'São Paulo')
-
-        # ── Country select ────────────────────────────────────────────────────
+        # ── Country — React Select (not a native <select>) ────────────────────
         try:
-            country_select = driver.find_element(
-                By.XPATH,
-                "//select[contains(@id,'country') or contains(@name,'country')]",
+            country_control = driver.find_element(
+                By.CSS_SELECTOR, 'div.phone-input__country div.select__control'
             )
-            Select(country_select).select_by_visible_text('Brazil')
-            logger.info("[greenhouse] country set to 'Brazil'")
-        except Exception:
-            pass
+            country_control.click()
+            time.sleep(0.5)
+            country_input = driver.find_element(
+                By.CSS_SELECTOR, 'div.phone-input__country input'
+            )
+            country_input.send_keys('Brazil')
+            time.sleep(0.5)
+            option = driver.find_element(By.CSS_SELECTOR, 'div.select__option')
+            option.click()
+            logger.info('[greenhouse] country selected: Brazil')
+        except Exception as exc:
+            logger.warning(f'[greenhouse] country select failed: {exc}')
+
+        # ── Phone — input inside fieldset.phone-input ─────────────────────────
+        try:
+            phone_input = driver.find_element(
+                By.CSS_SELECTOR, 'fieldset.phone-input div.phone-input__number input'
+            )
+            phone_input.clear()
+            phone_input.send_keys(user.phone or '11999999999')
+            logger.info('[greenhouse] phone filled')
+        except Exception as exc:
+            logger.warning(f'[greenhouse] phone fill failed: {exc}')
+
+        # ── Location (City) — may use autocomplete widget ─────────────────────
+        from selenium.webdriver.common.keys import Keys
+        try:
+            loc = driver.find_element(
+                By.CSS_SELECTOR,
+                'input[autocomplete="address-level2"], input[id*="location"], input[id*="city"]',
+            )
+            loc.click()
+            loc.clear()
+            loc.send_keys(user.city or 'São Paulo')
+            time.sleep(0.5)
+            loc.send_keys(Keys.ESCAPE)
+            logger.info(f'[greenhouse] location filled: {user.city or "São Paulo"}')
+        except Exception as exc:
+            logger.warning(f'[greenhouse] location fill failed: {exc}')
+            if not fill_by_placeholder('Location (City) *', user.city or 'São Paulo'):
+                fill_by_partial_placeholder('Location', user.city or 'São Paulo')
 
         # ── Resume upload ─────────────────────────────────────────────────────
         if resume_path:
