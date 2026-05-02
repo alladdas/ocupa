@@ -88,10 +88,14 @@ def apply_greenhouse_browser(
             tmp.close()
             resume_path = tmp.name
 
+        from webdriver_manager.chrome import ChromeDriverManager
+        from selenium.webdriver.chrome.service import Service
+
         options = uc.ChromeOptions()
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
-        driver = uc.Chrome(options=options, headless=False)
+        service = Service(ChromeDriverManager().install())
+        driver = uc.Chrome(options=options, driver_executable_path=service.path)
         wait = WebDriverWait(driver, 15)
 
         driver.get(url)
