@@ -163,6 +163,25 @@ def apply_greenhouse_browser(
                 except Exception:
                     pass
 
+        # Guard: ensure required fields are filled before submitting
+        missing = []
+        for fname, expected in (
+            ("first_name", user.first_name),
+            ("last_name", user.last_name),
+            ("email", user.email),
+        ):
+            try:
+                el = driver.find_element(By.CSS_SELECTOR, f'input[name="{fname}"]')
+                if not (el.get_attribute('value') or '').strip():
+                    missing.append(fname)
+            except Exception:
+                pass  # field not present in this form — skip check
+        if missing:
+            return ApplyResult(
+                job_id=job_id, user_id=user_id, status='failed', source='greenhouse',
+                error_message=f'Form fields not filled: {", ".join(missing)}',
+            )
+
         # Submit
         try:
             try:

@@ -18,7 +18,20 @@ logger = logging.getLogger(__name__)
 # Rough years-of-experience by seniority, used as numeric fallback
 _SENIORITY_YEARS = {'junior': 1, 'pleno': 3, 'senior': 6}
 
-_MODEL = 'gemini-1.5-flash'
+# Ordered by preference; first one that responds without error is used.
+_MODELS_TO_TRY = [
+    'gemini-2.0-flash',
+    'gemini-2.5-flash',
+    'gemini-2.0-flash-lite',
+]
+
+
+def _probe_model(client: genai.Client, model: str) -> bool:
+    try:
+        client.models.generate_content(model=model, contents='hi')
+        return True
+    except Exception:
+        return False
 
 
 class GPTAnswerer:
@@ -26,6 +39,15 @@ class GPTAnswerer:
         self._client = genai.Client(api_key=api_key)
         self._user = user
         self._context = self._build_context(job_description)
+        self._model = self._resolve_model()
+
+    def _resolve_model(self) -> str:
+        for model in _MODELS_TO_TRY:
+            if _probe_model(self._client, model):
+                logger.info(f'[GPTAnswerer] using model: {model}')
+                return model
+        logger.warning('[GPTAnswerer] all probe calls failed, defaulting to gemini-2.0-flash')
+        return _MODELS_TO_TRY[0]
 
     # ── Context ──────────────────────────────────────────────────────────────
 
@@ -55,7 +77,7 @@ class GPTAnswerer:
     def _call(self, prompt: str) -> str:
         try:
             response = self._client.models.generate_content(
-                model=_MODEL,
+                model=self._model,
                 contents=f'{self._context}\n\n{prompt}',
             )
             return response.text.strip()
