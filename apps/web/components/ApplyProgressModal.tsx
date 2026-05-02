@@ -26,6 +26,13 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
+function detectLanguage(text: string): 'portuguese' | 'english' {
+  const lower = text.toLowerCase()
+  const ptWords = ['você', 'vaga', 'empresa', 'requisitos', 'experiência', 'equipe', 'nosso', 'nossa', 'será', 'para', 'com ', 'mais', 'sobre']
+  const matches = ptWords.filter((w) => lower.includes(w)).length
+  return matches >= 2 ? 'portuguese' : 'english'
+}
+
 function extractErrorMsg(err: unknown): string {
   if (err instanceof Error) return err.message
   if (err && typeof err === 'object') {
@@ -218,7 +225,7 @@ export default function ApplyProgressModal({ job, userId, onClose }: Props) {
           job_description: {
             company: job.company,
             role: job.title,
-            output_language: 'english',
+            output_language: detectLanguage(job.description ?? ''),
             description: stripHtml(job.description ?? '').slice(0, 8000),
           },
         }),
