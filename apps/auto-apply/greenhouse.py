@@ -264,6 +264,75 @@ def apply_greenhouse_browser(
             except Exception:
                 pass
 
+        # ── React Select dropdowns (custom questions) ─────────────────────────
+        def _get_react_select_label(dropdown_el) -> str:
+            """Walk up the DOM to find the question label for a React Select control."""
+            try:
+                # Label is usually a sibling or ancestor — go up two levels then search
+                container = driver.execute_script(
+                    "return arguments[0].closest('.field, .select, [class*=\"question\"]')"
+                    " || arguments[0].parentElement.parentElement;",
+                    dropdown_el,
+                )
+                if container:
+                    label_el = driver.execute_script(
+                        "return arguments[0].querySelector('label, legend, [class*=\"label\"]');",
+                        container,
+                    )
+                    if label_el:
+                        return label_el.text.strip()
+            except Exception:
+                pass
+            return ''
+
+        for dropdown in driver.find_elements(By.CSS_SELECTOR, 'div.select__control'):
+            # Skip country dropdown — already handled
+            try:
+                parent_class = driver.execute_script(
+                    "return arguments[0].closest('.phone-input__country') !== null;", dropdown
+                )
+                if parent_class:
+                    continue
+            except Exception:
+                pass
+
+            # Skip if already has a value (placeholder div is gone)
+            try:
+                placeholder_el = dropdown.find_element(
+                    By.CSS_SELECTOR, 'div.select__placeholder'
+                )
+                if not placeholder_el.is_displayed():
+                    continue
+            except Exception:
+                continue  # no placeholder means already selected
+
+            label_text = _get_react_select_label(dropdown)
+            try:
+                dropdown.click()
+                time.sleep(0.5)
+                options = driver.find_elements(By.CSS_SELECTOR, 'div.select__option')
+                option_texts = [o.text for o in options if o.text.strip()]
+                if not option_texts:
+                    from selenium.webdriver.common.keys import Keys as _Keys
+                    driver.find_element(By.TAG_NAME, 'body').send_keys(_Keys.ESCAPE)
+                    continue
+                chosen = gpt.answer_options(label_text or 'select one', option_texts)
+                for opt in options:
+                    if opt.text.strip() == chosen:
+                        opt.click()
+                        break
+                else:
+                    options[0].click()
+                logger.info(f"[greenhouse] dropdown {label_text!r} → {chosen!r}")
+                time.sleep(0.3)
+            except Exception as exc:
+                logger.warning(f'[greenhouse] dropdown failed ({label_text!r}): {exc}')
+                try:
+                    from selenium.webdriver.common.keys import Keys as _Keys
+                    driver.find_element(By.TAG_NAME, 'body').send_keys(_Keys.ESCAPE)
+                except Exception:
+                    pass
+
         # ── Guard: required fields must be filled ─────────────────────────────
         missing = []
         for placeholder, label in (
