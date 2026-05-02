@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 from pdfminer.high_level import extract_text as pdf_extract_text
 from supabase import create_client, Client
 
-from greenhouse import apply_greenhouse
+from greenhouse import apply_with_agent
 from gupy import apply_gupy
 from models import ApplyResult, UserProfile
 
@@ -194,7 +194,7 @@ def apply_for_user(
 
     # 8. Dispatch by source
     if source == 'greenhouse':
-        result = apply_greenhouse(job, user, gemini_api_key, user_id=user_id)
+        result = apply_with_agent(job, user, gemini_api_key, user_id=user_id)
     elif source == 'gupy':
         result = apply_gupy(job, user, gemini_api_key, user_id=user_id)
     else:
