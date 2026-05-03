@@ -76,6 +76,13 @@ Analise o screenshot e retorne UMA ação em JSON:
 {{"action": "done", "status": "success"}}
 {{"action": "done", "status": "failed", "reason": "motivo"}}
 
+IMPORTANTE: Assim que você tiver preenchido os campos obrigatórios (marcados com *), \
+submeta o formulário imediatamente clicando em "Submit application". \
+NÃO espere preencher campos opcionais. \
+Se um campo não obrigatório falhar, ignore e continue para o submit. \
+Use: {{"action": "click", "selector": "button[type=submit]"}} ou \
+{{"action": "click", "selector": "text=Submit application"}}
+
 Regras:
 - Preencha todos os campos obrigatórios (marcados com *)
 - Para dropdowns React Select: clique em div.select__control para abrir, depois clique em div.select__option
@@ -249,7 +256,7 @@ def _run_visual_agent(
         logger.warning(f'[agent] resume temp file error: {exc}')
 
     client = anthropic.Anthropic(api_key=api_key)
-    max_steps = 60
+    max_steps = 80
     action_history: list[str] = []
     consecutive_scrolls = 0
 
@@ -402,6 +409,11 @@ def _run_visual_agent(
                             'ATENÇÃO: Você está em loop de scroll. '
                             'Pare de rolar e tente preencher um campo específico ou submeter o formulário.'
                         )
+                        try:
+                            page.click("button[type='submit']", timeout=3000)
+                            action_history.append('✓ auto-submit tentado')
+                        except Exception:
+                            pass
                         consecutive_scrolls = 0
                     continue
 
