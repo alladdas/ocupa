@@ -245,6 +245,22 @@ def _run_visual_agent(
                     page.screenshot(full_page=False)
                 ).decode()
 
+                try:
+                    inputs_html = page.evaluate("""() => {
+                        const els = document.querySelectorAll(
+                            'input, select, textarea, button[type="submit"]');
+                        return Array.from(els).slice(0, 30).map(el => ({
+                            tag: el.tagName,
+                            type: el.type || '',
+                            name: el.name || '',
+                            id: el.id || '',
+                            placeholder: el.placeholder || '',
+                            cls: el.className.substring(0, 50)
+                        }));
+                    }""")
+                except Exception:
+                    inputs_html = []
+
                 prompt_text = _ACTION_PROMPT.format(
                     first_name=user.first_name,
                     last_name=user.last_name,
@@ -256,7 +272,7 @@ def _run_visual_agent(
                     step=step,
                     max_steps=max_steps,
                     url=page.url,
-                )
+                ) + f'\n\nELEMENTOS DISPONÍVEIS NA PÁGINA:\n{json.dumps(inputs_html, indent=2)}'
 
                 response = client.messages.create(
                     model='claude-sonnet-4-5',
@@ -311,7 +327,7 @@ def _run_visual_agent(
 
                 elif act == 'type':
                     try:
-                        page.fill(action['selector'], action['text'])
+                        page.fill(action['selector'], action['text'], timeout=5000)
                     except Exception as exc:
                         logger.warning(f'[agent] type failed: {exc}')
 
