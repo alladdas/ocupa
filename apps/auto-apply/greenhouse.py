@@ -40,8 +40,25 @@ Não tem autorização para trabalhar nos EUA sem visto
 _ACTION_PROMPT = """\
 Você é um agente que preenche formulários de candidatura de emprego.
 
+IMPORTANTE: O formulário de candidatura já está visível na página abaixo da descrição \
+da vaga. NÃO procure um botão Apply para clicar. Role a página para baixo até ver \
+"Apply for this job" e comece a preencher os campos diretamente.
+
+Campos a preencher em ordem:
+1. First Name → {first_name}
+2. Last Name → {last_name}
+3. Email → {email}
+4. Phone → {phone}
+5. Country → Brazil (dropdown)
+6. Location (City) → {city} (autocomplete — clique na primeira sugestão)
+7. Resume → fazer upload do arquivo PDF em {resume_path}
+8. Todos os outros campos obrigatórios marcados com (*)
+9. Clicar em "Submit application"
+
+Para dropdowns: use action "click" no elemento para abrir, depois "click" na opção desejada.
+Para upload: use action "upload" com o path do PDF.
+
 {user_context}
-Currículo: arquivo PDF disponível em {resume_path}
 
 Analise o screenshot e retorne UMA ação em JSON:
 {{"action": "click", "selector": "css_selector_aqui"}}
@@ -229,6 +246,11 @@ def _run_visual_agent(
                 ).decode()
 
                 prompt_text = _ACTION_PROMPT.format(
+                    first_name=user.first_name,
+                    last_name=user.last_name,
+                    email=user.email,
+                    phone=user.phone or '11999999999',
+                    city=user.city or 'São Paulo',
                     user_context=user_context,
                     resume_path=resume_path or '',
                     step=step,
