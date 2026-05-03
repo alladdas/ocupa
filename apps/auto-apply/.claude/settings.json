@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/joaol/ocupa/apps/scraper/scripts/**)"
+    ]
+  }
+}
