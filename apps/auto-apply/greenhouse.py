@@ -83,6 +83,17 @@ Estado atual — passo {step}/{max_steps} | URL: {url}
 
 # ── URL parser ────────────────────────────────────────────────────────────────
 
+def _convert_selector(selector: str) -> str:
+    """Convert :has-text() pseudo-class to Playwright text= selector."""
+    m = re.search(r":has-text\('([^']+)'\)", selector)
+    if m:
+        return f"text={m.group(1)}"
+    m = re.search(r':has-text\("([^"]+)"\)', selector)
+    if m:
+        return f"text={m.group(1)}"
+    return selector
+
+
 def _parse_url(url: str) -> tuple[str, str]:
     """Extract (board_token, numeric_job_id) from a Greenhouse job URL."""
     m = re.search(r'greenhouse\.io/([^/?#]+)/jobs/(\d+)', url or '')
@@ -231,7 +242,7 @@ def _run_visual_agent(
         logger.warning(f'[agent] resume temp file error: {exc}')
 
     client = anthropic.Anthropic(api_key=api_key)
-    max_steps = 40
+    max_steps = 60
     action_history: list[str] = []
 
     try:
@@ -313,7 +324,7 @@ def _run_visual_agent(
 
                 logger.info(f'[agent] step {step}: {action}')
                 act = action.get('action', '')
-                sel = action.get('selector', '')
+                sel = _convert_selector(action.get('selector', ''))
 
                 if act == 'done':
                     browser.close()
