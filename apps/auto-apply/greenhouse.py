@@ -231,7 +231,8 @@ def _run_visual_agent(
         logger.warning(f'[agent] resume temp file error: {exc}')
 
     client = anthropic.Anthropic(api_key=api_key)
-    max_steps = 20
+    max_steps = 40
+    action_history: list[str] = []
 
     try:
         with sync_playwright() as p:
@@ -272,7 +273,10 @@ def _run_visual_agent(
                     step=step,
                     max_steps=max_steps,
                     url=page.url,
-                ) + f'\n\nELEMENTOS DISPONÍVEIS NA PÁGINA:\n{json.dumps(inputs_html, indent=2)}'
+                )
+                prompt_text += f'\n\nELEMENTOS DISPONÍVEIS NA PÁGINA:\n{json.dumps(inputs_html, indent=2)}'
+                if action_history:
+                    prompt_text += '\n\nHISTÓRICO DAS ÚLTIMAS AÇÕES:\n' + '\n'.join(action_history[-5:])
 
                 response = client.messages.create(
                     model='claude-sonnet-4-5',
@@ -309,6 +313,7 @@ def _run_visual_agent(
 
                 logger.info(f'[agent] step {step}: {action}')
                 act = action.get('action', '')
+                sel = action.get('selector', '')
 
                 if act == 'done':
                     browser.close()
@@ -320,33 +325,51 @@ def _run_visual_agent(
 
                 elif act == 'click':
                     try:
-                        page.click(action['selector'], timeout=5000)
+                        page.click(sel, timeout=5000)
                         page.wait_for_timeout(500)
+                        action_history.append(f'✓ click {sel}')
                     except Exception as exc:
+                        action_history.append(f'✗ click {sel} FALHOU: {str(exc)[:80]}')
                         logger.warning(f'[agent] click failed: {exc}')
 
                 elif act == 'type':
+                    text = action.get('text', '')
+                    success = False
                     try:
-                        page.fill(action['selector'], action['text'], timeout=5000)
-                    except Exception as exc:
-                        logger.warning(f'[agent] type failed: {exc}')
+                        page.fill(sel, text, timeout=5000)
+                        success = True
+                    except Exception:
+                        try:
+                            page.locator(sel).fill(text, timeout=5000)
+                            success = True
+                        except Exception as exc:
+                            logger.warning(f'[agent] type failed: {exc}')
+                    action_history.append(
+                        f"✓ type {sel} = {text[:30]!r}" if success
+                        else f'✗ type {sel} FALHOU'
+                    )
 
                 elif act == 'select':
                     try:
-                        page.select_option(action['selector'], action['value'])
+                        page.select_option(sel, action['value'])
+                        action_history.append(f"✓ select {sel} = {action['value']!r}")
                     except Exception as exc:
+                        action_history.append(f'✗ select {sel} FALHOU')
                         logger.warning(f'[agent] select failed: {exc}')
 
                 elif act == 'upload':
                     try:
                         path = action.get('path') or resume_path or ''
-                        page.set_input_files(action['selector'], path)
+                        page.set_input_files(sel, path)
+                        action_history.append(f'✓ upload {sel}')
                     except Exception as exc:
+                        action_history.append(f'✗ upload {sel} FALHOU')
                         logger.warning(f'[agent] upload failed: {exc}')
 
                 elif act == 'scroll':
                     page.evaluate('window.scrollBy(0, 500)')
                     page.wait_for_timeout(500)
+                    action_history.append('✓ scroll down')
 
             browser.close()
             return ApplyResult(
