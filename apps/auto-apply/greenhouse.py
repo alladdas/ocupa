@@ -342,11 +342,27 @@ def _run_visual_agent(
                 sel = _convert_selector(action.get('selector', ''))
 
                 if act == 'done':
+                    if action.get('status') == 'success':
+                        page_text = page.content().lower()
+                        confirmed = any(kw in page_text for kw in (
+                            'thank', 'obrigado', 'submitted', 'received', 'application',
+                        ))
+                        if confirmed:
+                            browser.close()
+                            return ApplyResult(
+                                job_id=job_id, user_id=user_id, status='success',
+                                source='greenhouse',
+                            )
+                        else:
+                            logger.warning('[agent] done/success declared but no confirmation found')
+                            action_history.append(
+                                '✗ done/success rejeitado — nenhuma confirmação na página'
+                            )
+                            continue
                     browser.close()
-                    status = 'success' if action.get('status') == 'success' else 'failed'
                     return ApplyResult(
-                        job_id=job_id, user_id=user_id, status=status, source='greenhouse',
-                        error_message=action.get('reason') if status == 'failed' else None,
+                        job_id=job_id, user_id=user_id, status='failed', source='greenhouse',
+                        error_message=action.get('reason') or 'Agent declared failure',
                     )
 
                 elif act == 'click':
@@ -409,11 +425,6 @@ def _run_visual_agent(
                             'ATENÇÃO: Você está em loop de scroll. '
                             'Pare de rolar e tente preencher um campo específico ou submeter o formulário.'
                         )
-                        try:
-                            page.click("button[type='submit']", timeout=3000)
-                            action_history.append('✓ auto-submit tentado')
-                        except Exception:
-                            pass
                         consecutive_scrolls = 0
                     continue
 
