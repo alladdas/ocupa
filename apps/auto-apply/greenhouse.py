@@ -58,6 +58,12 @@ Campos a preencher em ordem:
 Para dropdowns: use action "click" no elemento para abrir, depois "click" na opção desejada.
 Para upload: use action "upload" com o path do PDF.
 
+Para o campo Country (React Select com id #country):
+1. Use "click" em #country para abrir o dropdown
+2. Use "type" em #country com texto "Brazil" para filtrar
+3. Use "key" com key "Enter" para confirmar a seleção
+Exemplo: {{"action": "key", "key": "Enter"}}
+
 {user_context}
 
 Analise o screenshot e retorne UMA ação em JSON:
@@ -66,6 +72,7 @@ Analise o screenshot e retorne UMA ação em JSON:
 {{"action": "select", "selector": "css_selector_aqui", "value": "opcao_aqui"}}
 {{"action": "upload", "selector": "input[type=file]", "path": "{resume_path}"}}
 {{"action": "scroll", "direction": "down"}}
+{{"action": "key", "key": "Enter"}}
 {{"action": "done", "status": "success"}}
 {{"action": "done", "status": "failed", "reason": "motivo"}}
 
@@ -244,6 +251,7 @@ def _run_visual_agent(
     client = anthropic.Anthropic(api_key=api_key)
     max_steps = 60
     action_history: list[str] = []
+    consecutive_scrolls = 0
 
     try:
         with sync_playwright() as p:
@@ -377,10 +385,28 @@ def _run_visual_agent(
                         action_history.append(f'✗ upload {sel} FALHOU')
                         logger.warning(f'[agent] upload failed: {exc}')
 
+                elif act == 'key':
+                    key = action.get('key', 'Enter')
+                    page.keyboard.press(key)
+                    page.wait_for_timeout(300)
+                    action_history.append(f'✓ key {key}')
+                    consecutive_scrolls = 0
+
                 elif act == 'scroll':
                     page.evaluate('window.scrollBy(0, 500)')
                     page.wait_for_timeout(500)
                     action_history.append('✓ scroll down')
+                    consecutive_scrolls += 1
+                    if consecutive_scrolls >= 5:
+                        action_history.append(
+                            'ATENÇÃO: Você está em loop de scroll. '
+                            'Pare de rolar e tente preencher um campo específico ou submeter o formulário.'
+                        )
+                        consecutive_scrolls = 0
+                    continue
+
+                if act != 'scroll':
+                    consecutive_scrolls = 0
 
             browser.close()
             return ApplyResult(
