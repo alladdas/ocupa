@@ -262,7 +262,7 @@ def _run_visual_agent(
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(headless=False, slow_mo=500)
             page = browser.new_page(viewport={'width': 1280, 'height': 900})
             page.goto(url)
             page.wait_for_load_state('networkidle')
