@@ -27,6 +27,8 @@ const BR_CITIES = [
 const SENIORITY_OPTS = ['Estágio', 'Júnior', 'Pleno', 'Sênior', 'Especialista', 'Gerente', 'Diretor']
 const JOB_TYPE_OPTS  = ['CLT', 'PJ', 'Freelance', 'Estágio', 'Temporário']
 const WORK_MODEL_OPTS = ['Remoto', 'Híbrido', 'Presencial']
+const GENDER_OPTS = ['Homem Cis', 'Mulher Cis', 'Homem Trans', 'Mulher Trans', 'Não-binário', 'Prefiro não informar']
+const RACE_OPTS = ['Branco', 'Preto', 'Pardo', 'Amarelo', 'Indígena', 'Prefiro não informar']
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,7 +46,12 @@ interface JobPrefs {
   work_model: string
 }
 
-type ProfileRow = PersonalData & JobPrefs & { [k: string]: unknown }
+interface DiversityData {
+  gender: string
+  race: string
+}
+
+type ProfileRow = PersonalData & JobPrefs & DiversityData & { [k: string]: unknown }
 
 // ─── Shared styles ────────────────────────────────────────────────────────────
 
@@ -106,6 +113,7 @@ export default function ProfilePage() {
     first_name: '', last_name: '', phone: '', city: '', linkedin_url: '',
   })
   const [prefs, setPrefs] = useState<JobPrefs>({ job_type: '', seniority: '', work_model: '' })
+  const [diversity, setDiversity] = useState<DiversityData>({ gender: '', race: '' })
   const [resume, setResume] = useState<{ file_name: string } | null>(null)
   const [dataLoading, setDataLoading] = useState(true)
 
@@ -113,8 +121,11 @@ export default function ProfilePage() {
   const [savedPersonal, setSavedPersonal] = useState(false)
   const [savingPrefs, setSavingPrefs] = useState(false)
   const [savedPrefs, setSavedPrefs] = useState(false)
+  const [savingDiversity, setSavingDiversity] = useState(false)
+  const [savedDiversity, setSavedDiversity] = useState(false)
   const [savePersonalErr, setSavePersonalErr] = useState('')
   const [savePrefsErr, setSavePrefsErr] = useState('')
+  const [saveDiversityErr, setSaveDiversityErr] = useState('')
 
   const [cvLoading, setCvLoading] = useState(false)
   const [cvSaved, setCvSaved] = useState(false)
@@ -138,7 +149,7 @@ export default function ProfilePage() {
     Promise.all([
       supabase
         .from('profiles')
-        .select('first_name, last_name, phone, city, linkedin_url, job_type, seniority, work_model')
+        .select('first_name, last_name, phone, city, linkedin_url, job_type, seniority, work_model, gender, race')
         .eq('id', user.id)
         .single(),
       supabase
@@ -162,6 +173,10 @@ export default function ProfilePage() {
           job_type:   d.job_type   ?? '',
           seniority:  d.seniority  ?? '',
           work_model: d.work_model ?? '',
+        })
+        setDiversity({
+          gender: d.gender ?? '',
+          race:   d.race   ?? '',
         })
       }
       if (resumeRes.data) setResume(resumeRes.data as { file_name: string })
@@ -207,6 +222,23 @@ export default function ProfilePage() {
     } else {
       setSavedPrefs(true)
       setTimeout(() => setSavedPrefs(false), 2500)
+    }
+  }
+
+  async function saveDiversity() {
+    if (!user) return
+    setSavingDiversity(true)
+    setSaveDiversityErr('')
+    const { error } = await getSupabaseBrowser()
+      .from('profiles')
+      .update(diversity)
+      .eq('id', user.id)
+    setSavingDiversity(false)
+    if (error) {
+      setSaveDiversityErr(error.message)
+    } else {
+      setSavedDiversity(true)
+      setTimeout(() => setSavedDiversity(false), 2500)
     }
   }
 
@@ -464,6 +496,45 @@ export default function ProfilePage() {
 
           <div className="mt-5 flex justify-end">
             <SaveBtn saving={savingPrefs} saved={savedPrefs} onClick={() => void savePrefs()} />
+          </div>
+        </SectionCard>
+
+        {/* ── Diversidade e inclusão ────────────────────────────────────────── */}
+        <SectionCard title="Diversidade e inclusão">
+          <div className="flex flex-col gap-5">
+            <div>
+              <p className={lbl}>Gênero</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {GENDER_OPTS.map((opt) => (
+                  <Chip
+                    key={opt} label={opt}
+                    selected={diversity.gender === opt}
+                    onClick={() => setDiversity((d) => ({ ...d, gender: d.gender === opt ? '' : opt }))}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className={lbl}>Raça/Cor</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {RACE_OPTS.map((opt) => (
+                  <Chip
+                    key={opt} label={opt}
+                    selected={diversity.race === opt}
+                    onClick={() => setDiversity((d) => ({ ...d, race: d.race === opt ? '' : opt }))}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {saveDiversityErr && (
+            <p className="mt-3 text-xs" style={{ color: '#ef4444' }}>{saveDiversityErr}</p>
+          )}
+
+          <div className="mt-5 flex justify-end">
+            <SaveBtn saving={savingDiversity} saved={savedDiversity} onClick={() => void saveDiversity()} />
           </div>
         </SectionCard>
       </div>

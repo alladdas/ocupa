@@ -19,6 +19,8 @@ class UserProfile(BaseModel):
     seniority: str = 'pleno'              # junior / pleno / senior
     work_model_preference: str = 'remoto' # remoto / hibrido / presencial
     legal_work_auth: bool = True
+    gender: str = 'Prefiro não informar'
+    race: str = 'Prefiro não informar'
 
     @property
     def full_name(self) -> str:

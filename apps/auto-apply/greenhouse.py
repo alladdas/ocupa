@@ -2,12 +2,11 @@
 Greenhouse auto-apply.
 
 Primary path  : POST multipart via Greenhouse Boards API.
-Fallback (401): Visual agent — Claude Vision + Playwright headless.
+Fallback (401): Visual agent — Gemini Vision + Playwright headless.
 """
 
 from __future__ import annotations
 
-import base64
 import json
 import logging
 import os
@@ -24,76 +23,6 @@ from models import ApplyResult, UserProfile
 logger = logging.getLogger(__name__)
 
 BOARDS_API = 'https://boards-api.greenhouse.io/v1/boards'
-
-# ── Prompts ───────────────────────────────────────────────────────────────────
-
-_USER_CONTEXT = """\
-Candidato: {first_name} {last_name}
-Email: {email}
-Telefone: {phone}
-Cidade: {city}
-País: Brasil
-LinkedIn: {linkedin}
-Brasileiro, latino (Hispanic/Latino = Yes)
-Não tem autorização para trabalhar nos EUA sem visto
-"""
-
-_ACTION_PROMPT = """\
-Você é um agente que preenche formulários de candidatura de emprego.
-
-IMPORTANTE: O formulário de candidatura já está visível na página abaixo da descrição \
-da vaga. NÃO procure um botão Apply para clicar. Role a página para baixo até ver \
-"Apply for this job" e comece a preencher os campos diretamente.
-
-Campos a preencher em ordem:
-1. First Name → {first_name}
-2. Last Name → {last_name}
-3. Email → {email}
-4. Phone → {phone}
-5. Country → Brazil (dropdown)
-6. Location (City) → {city} (autocomplete — clique na primeira sugestão)
-7. Resume → fazer upload do arquivo PDF em {resume_path}
-8. Todos os outros campos obrigatórios marcados com (*)
-9. Clicar em "Submit application"
-
-Para dropdowns: use action "click" no elemento para abrir, depois "click" na opção desejada.
-Para upload: use action "upload" com o path do PDF.
-
-Para o campo Country (React Select com id #country):
-1. Use "click" em #country para abrir o dropdown
-2. Use "type" em #country com texto "Brazil" para filtrar
-3. Use "key" com key "Enter" para confirmar a seleção
-Exemplo: {{"action": "key", "key": "Enter"}}
-
-{user_context}
-
-Analise o screenshot e retorne UMA ação em JSON:
-{{"action": "click", "selector": "css_selector_aqui"}}
-{{"action": "type", "selector": "css_selector_aqui", "text": "texto_aqui"}}
-{{"action": "select", "selector": "css_selector_aqui", "value": "opcao_aqui"}}
-{{"action": "upload", "selector": "input[type=file]", "path": "{resume_path}"}}
-{{"action": "scroll", "direction": "down"}}
-{{"action": "key", "key": "Enter"}}
-{{"action": "done", "status": "success"}}
-{{"action": "done", "status": "failed", "reason": "motivo"}}
-
-IMPORTANTE: Assim que você tiver preenchido os campos obrigatórios (marcados com *), \
-submeta o formulário imediatamente clicando em "Submit application". \
-NÃO espere preencher campos opcionais. \
-Se um campo não obrigatório falhar, ignore e continue para o submit. \
-Use: {{"action": "click", "selector": "button[type=submit]"}} ou \
-{{"action": "click", "selector": "text=Submit application"}}
-
-Regras:
-- Preencha todos os campos obrigatórios (marcados com *)
-- Para dropdowns React Select: clique em div.select__control para abrir, depois clique em div.select__option
-- Após preencher tudo, clique em Submit
-- Se vir confirmação (thank you / obrigado / submitted), retorne done/success
-- Se não conseguir avançar após 3 tentativas no mesmo estado, retorne done/failed
-- Responda APENAS com o JSON, sem explicações
-
-Estado atual — passo {step}/{max_steps} | URL: {url}
-"""
 
 
 # ── URL parser ────────────────────────────────────────────────────────────────
@@ -215,11 +144,14 @@ def _try_greenhouse_api(
 def _run_visual_agent(
     job: dict,
     user: UserProfile,
+    gemini_api_key: str,
     user_id: str = '',
 ) -> ApplyResult:
-    """Claude Vision + Playwright headless agent."""
+    """Gemini Vision + Playwright headless agent."""
     try:
-        import anthropic
+        import io as _io
+        import PIL.Image
+        from google import genai as _genai
         from playwright.sync_api import sync_playwright
     except ImportError as exc:
         return ApplyResult(
@@ -227,24 +159,14 @@ def _run_visual_agent(
             source='greenhouse', error_message=f'Agent dependencies unavailable: {exc}',
         )
 
-    api_key = os.environ.get('ANTHROPIC_API_KEY', '')
-    if not api_key:
+    if not gemini_api_key:
         return ApplyResult(
             job_id=str(job.get('id', '')), user_id=user_id, status='failed',
-            source='greenhouse', error_message='ANTHROPIC_API_KEY not set',
+            source='greenhouse', error_message='GEMINI_API_KEY not set',
         )
 
     job_id = str(job.get('id', ''))
     url = job.get('url', '')
-
-    user_context = _USER_CONTEXT.format(
-        first_name=user.first_name,
-        last_name=user.last_name,
-        email=user.email,
-        phone=user.phone or '+55 11 99999-9999',
-        city=user.city or 'São Paulo',
-        linkedin=user.linkedin_url or '',
-    )
 
     resume_path: Optional[str] = None
     try:
@@ -256,23 +178,23 @@ def _run_visual_agent(
     except Exception as exc:
         logger.warning(f'[agent] resume temp file error: {exc}')
 
-    client = anthropic.Anthropic(api_key=api_key)
+    gemini = _genai.Client(api_key=gemini_api_key)
     max_steps = 80
     action_history: list[str] = []
     consecutive_scrolls = 0
+    state: dict = {'fields_filled': [], 'fields_failed': [], 'submitted': False}
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=False, slow_mo=500)
+            browser = p.chromium.launch(headless=True)
             page = browser.new_page(viewport={'width': 1280, 'height': 900})
             page.goto(url)
             page.wait_for_load_state('domcontentloaded')
             time.sleep(2)
 
             for step in range(1, max_steps + 1):
-                screenshot_b64 = base64.b64encode(
-                    page.screenshot(full_page=False)
-                ).decode()
+                screenshot_bytes = page.screenshot(full_page=False)
+                img = PIL.Image.open(_io.BytesIO(screenshot_bytes))
 
                 try:
                     inputs_html = page.evaluate("""() => {
@@ -290,42 +212,88 @@ def _run_visual_agent(
                 except Exception:
                     inputs_html = []
 
-                prompt_text = _ACTION_PROMPT.format(
-                    first_name=user.first_name,
-                    last_name=user.last_name,
-                    email=user.email,
-                    phone=user.phone or '11999999999',
-                    city=user.city or 'São Paulo',
-                    user_context=user_context,
-                    resume_path=resume_path or '',
-                    step=step,
-                    max_steps=max_steps,
-                    url=page.url,
+                prompt_text = (
+                    f'Você é um agente que preenche formulários de candidatura de emprego.\n\n'
+                    f'IMPORTANTE: O formulário de candidatura já está visível na página abaixo da descrição '
+                    f'da vaga. NÃO procure um botão Apply para clicar. Role a página para baixo até ver '
+                    f'"Apply for this job" e comece a preencher os campos diretamente.\n\n'
+                    f'PERFIL DO CANDIDATO (use para responder QUALQUER pergunta):\n'
+                    f'Nome completo: {user.first_name} {user.last_name}\n'
+                    f'Como prefere ser chamado: {user.first_name}\n'
+                    f'Email: {user.email}\n'
+                    f'Telefone: {user.phone or "11999999999"}\n'
+                    f'Cidade: {user.city or "São Paulo"}, Brasil\n'
+                    f'LinkedIn: {user.linkedin_url or ""}\n'
+                    f'Senioridade: {user.seniority or "Pleno"}\n'
+                    f'Modelo preferido: {user.work_model_preference or "Híbrido"}\n'
+                    f'Gênero: {user.gender or "Prefiro não informar"}\n'
+                    f'Raça/Cor: {user.race or "Prefiro não informar"}\n'
+                    f'Nacionalidade: Brasileiro\n'
+                    f'É latino/hispânico: Sim\n'
+                    f'PCD: Não\n'
+                    f'Veterano: Não (não aplicável no Brasil)\n'
+                    f'Autorização para trabalhar no Brasil: Sim\n'
+                    f'Autorização para trabalhar nos EUA: Não (precisaria de visto)\n'
+                    f'Trecho do currículo: {user.resume_text[:1500] if user.resume_text else ""}\n\n'
+                    f'Para perguntas como:\n'
+                    f'- "Como prefere ser chamado?" → {user.first_name}\n'
+                    f'- "Conte sobre você" → use o currículo acima\n'
+                    f'- "Por que quer trabalhar aqui?" → mencione crescimento profissional e alinhamento com a empresa\n'
+                    f'- "Qual sua pretensão salarial?" → "A combinar"\n'
+                    f'- "Disponibilidade para início?" → "Imediata"\n'
+                    f'- Campos de texto livre → máximo 2-3 frases, profissional e direto\n\n'
+                    f'ESTADO:\n'
+                    f'Já preenchido: {state["fields_filled"][-10:]}\n'
+                    f'Falharam: {state["fields_failed"]}\n\n'
+                    f'Se campo já está em "Já preenchido", PULE-O e vá para o próximo.\n'
+                    f'Se todos obrigatórios (*) preenchidos, submeta o formulário.\n\n'
+                    f'Campos a preencher em ordem:\n'
+                    f'1. First Name → {user.first_name}\n'
+                    f'2. Last Name → {user.last_name}\n'
+                    f'3. Email → {user.email}\n'
+                    f'4. Phone → {user.phone or "11999999999"}\n'
+                    f'5. Country → Brazil (dropdown)\n'
+                    f'6. Location (City) → {user.city or "São Paulo"} (autocomplete — clique na primeira sugestão)\n'
+                    f'7. Resume → fazer upload do arquivo PDF em {resume_path}\n'
+                    f'8. Todos os outros campos obrigatórios marcados com (*)\n'
+                    f'9. Clicar em "Submit application"\n\n'
+                    f'Para dropdowns: use action "click" no elemento para abrir, depois "click" na opção desejada.\n'
+                    f'Para upload: use action "upload" com o path do PDF.\n\n'
+                    f'Para o campo Country (React Select com id #country):\n'
+                    f'1. Use "click" em #country para abrir o dropdown\n'
+                    f'2. Use "type" em #country com texto "Brazil" para filtrar\n'
+                    f'3. Use "key" com key "Enter" para confirmar a seleção\n\n'
+                    f'Analise o screenshot e retorne UMA ação em JSON:\n'
+                    f'{{"action": "click", "selector": "css_selector_aqui"}}\n'
+                    f'{{"action": "type", "selector": "css_selector_aqui", "text": "texto_aqui"}}\n'
+                    f'{{"action": "select", "selector": "css_selector_aqui", "value": "opcao_aqui"}}\n'
+                    f'{{"action": "upload", "selector": "input[type=file]", "path": "{resume_path}"}}\n'
+                    f'{{"action": "scroll", "direction": "down"}}\n'
+                    f'{{"action": "key", "key": "Enter"}}\n'
+                    f'{{"action": "done", "status": "success"}}\n'
+                    f'{{"action": "done", "status": "failed", "reason": "motivo"}}\n\n'
+                    f'IMPORTANTE: Assim que você tiver preenchido os campos obrigatórios (marcados com *), '
+                    f'submeta o formulário imediatamente clicando em "Submit application". '
+                    f'NÃO espere preencher campos opcionais. '
+                    f'Se um campo não obrigatório falhar, ignore e continue para o submit.\n\n'
+                    f'Regras:\n'
+                    f'- Preencha todos os campos obrigatórios (marcados com *)\n'
+                    f'- Para dropdowns React Select: clique em div.select__control para abrir, depois clique em div.select__option\n'
+                    f'- Após preencher tudo, clique em Submit\n'
+                    f'- Se vir confirmação (thank you / obrigado / submitted), retorne done/success\n'
+                    f'- Se não conseguir avançar após 3 tentativas no mesmo estado, retorne done/failed\n'
+                    f'- Responda APENAS com o JSON, sem explicações\n\n'
+                    f'Estado atual — passo {step}/{max_steps} | URL: {page.url}\n\n'
+                    f'ELEMENTOS DISPONÍVEIS NA PÁGINA:\n{json.dumps(inputs_html, indent=2)}'
                 )
-                prompt_text += f'\n\nELEMENTOS DISPONÍVEIS NA PÁGINA:\n{json.dumps(inputs_html, indent=2)}'
                 if action_history:
                     prompt_text += '\n\nHISTÓRICO DAS ÚLTIMAS AÇÕES:\n' + '\n'.join(action_history[-5:])
 
-                response = client.messages.create(
-                    model='claude-sonnet-4-5',
-                    max_tokens=1024,
-                    messages=[{
-                        'role': 'user',
-                        'content': [
-                            {
-                                'type': 'image',
-                                'source': {
-                                    'type': 'base64',
-                                    'media_type': 'image/png',
-                                    'data': screenshot_b64,
-                                },
-                            },
-                            {'type': 'text', 'text': prompt_text},
-                        ],
-                    }],
+                response = gemini.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=[img, prompt_text],
                 )
-
-                action_text = response.content[0].text.strip()
+                action_text = response.text.strip()
                 logger.info(f'[agent] step {step} response: {action_text[:200]}')
 
                 json_match = re.search(r'\{.*\}', action_text, re.DOTALL)
@@ -388,17 +356,21 @@ def _run_visual_agent(
                             success = True
                         except Exception as exc:
                             logger.warning(f'[agent] type failed: {exc}')
-                    action_history.append(
-                        f"✓ type {sel} = {text[:30]!r}" if success
-                        else f'✗ type {sel} FALHOU'
-                    )
+                    if success:
+                        action_history.append(f'✓ type {sel} = {text[:30]!r}')
+                        state['fields_filled'].append(sel)
+                    else:
+                        action_history.append(f'✗ type {sel} FALHOU')
+                        state['fields_failed'].append(sel)
 
                 elif act == 'select':
                     try:
                         page.select_option(sel, action['value'])
                         action_history.append(f"✓ select {sel} = {action['value']!r}")
+                        state['fields_filled'].append(sel)
                     except Exception as exc:
                         action_history.append(f'✗ select {sel} FALHOU')
+                        state['fields_failed'].append(sel)
                         logger.warning(f'[agent] select failed: {exc}')
 
                 elif act == 'upload':
@@ -406,8 +378,10 @@ def _run_visual_agent(
                         path = action.get('path') or resume_path or ''
                         page.set_input_files(sel, path)
                         action_history.append(f'✓ upload {sel}')
+                        state['fields_filled'].append(sel)
                     except Exception as exc:
                         action_history.append(f'✗ upload {sel} FALHOU')
+                        state['fields_failed'].append(sel)
                         logger.warning(f'[agent] upload failed: {exc}')
 
                 elif act == 'key':
@@ -461,13 +435,13 @@ def apply_with_agent(
     gemini_api_key: str,
     user_id: str = '',
 ) -> ApplyResult:
-    """Try Greenhouse API; fall back to Claude Vision agent on 401."""
+    """Try Greenhouse API; fall back to Gemini Vision agent on 401."""
     result = _try_greenhouse_api(job, user, gemini_api_key, user_id)
     if result.status == 'success':
         return result
 
     if '401' in (result.error_message or ''):
         logger.warning(f'[greenhouse] API 401 — launching visual agent')
-        return _run_visual_agent(job, user, user_id)
+        return _run_visual_agent(job, user, gemini_api_key, user_id)
 
     return result
