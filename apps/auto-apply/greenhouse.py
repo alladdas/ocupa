@@ -265,7 +265,8 @@ def _run_visual_agent(
             browser = p.chromium.launch(headless=False, slow_mo=500)
             page = browser.new_page(viewport={'width': 1280, 'height': 900})
             page.goto(url)
-            page.wait_for_load_state('networkidle')
+            page.wait_for_load_state('domcontentloaded')
+            time.sleep(2)
 
             for step in range(1, max_steps + 1):
                 screenshot_b64 = base64.b64encode(
