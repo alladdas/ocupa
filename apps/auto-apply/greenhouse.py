@@ -1,8 +1,10 @@
 """
 Greenhouse auto-apply.
 
-Primary path  : POST multipart via Greenhouse Boards API.
-Fallback (401): Visual agent — Gemini Vision + Playwright headless.
+Priority order:
+  1. Recorded template (if one exists in apply_templates for this company)
+  2. POST multipart via Greenhouse Boards API
+  3. Visual agent — Gemini Vision + Playwright headless (fallback on API 401)
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ import os
 import re
 import tempfile
 import time
-from typing import Optional
+from typing import Any, Optional
 
 import requests
 
@@ -23,6 +25,154 @@ from models import ApplyResult, UserProfile
 logger = logging.getLogger(__name__)
 
 BOARDS_API = 'https://boards-api.greenhouse.io/v1/boards'
+
+
+# ── Template runner ───────────────────────────────────────────────────────────
+
+def _build_template_vars(user: UserProfile, resume_path: Optional[str]) -> dict[str, str]:
+    return {
+        'first_name':       user.first_name,
+        'last_name':        user.last_name,
+        'email':            user.email,
+        'phone':            user.phone or '',
+        'city':             user.city or '',
+        'linkedin_url':     user.linkedin_url or '',
+        'gender':           user.gender or 'Prefiro não informar',
+        'race':             user.race or 'Prefiro não informar',
+        'seniority':        user.seniority or 'pleno',
+        'work_model':       user.work_model_preference or 'remoto',
+        'resume_pdf_path':  resume_path or '',
+    }
+
+
+def _substitute(value: Optional[str], vars: dict[str, str], example: str = '') -> str:
+    """Replace {{key}} placeholders; fall back to example for unrecognised vars."""
+    if not value:
+        return ''
+    result = value
+    for key, val in vars.items():
+        result = result.replace('{{' + key + '}}', val)
+    # If any placeholder remains (custom_* fields), use the recorded example value
+    if re.search(r'\{\{[^}]+\}\}', result):
+        return example
+    return result
+
+
+def _run_template_apply(
+    job: dict,
+    user: UserProfile,
+    template: dict,
+    user_id: str = '',
+) -> ApplyResult:
+    """Replay a recorded template to fill and submit the application form."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        return ApplyResult(
+            job_id=str(job.get('id', '')), user_id=user_id, status='failed',
+            source='greenhouse', error_message=f'Playwright not available: {exc}',
+        )
+
+    job_id = str(job.get('id', ''))
+    url = job.get('url', '')
+    steps: list[dict] = template.get('steps', [])
+
+    resume_path: Optional[str] = None
+    try:
+        if user.resume_pdf_bytes:
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
+            tmp.write(user.resume_pdf_bytes)
+            tmp.close()
+            resume_path = tmp.name
+    except Exception as exc:
+        logger.warning(f'[template] resume temp file error: {exc}')
+
+    template_vars = _build_template_vars(user, resume_path)
+    errors: list[str] = []
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page(viewport={'width': 1280, 'height': 900})
+            page.goto(url)
+            page.wait_for_load_state('domcontentloaded')
+            time.sleep(2)
+
+            for i, step in enumerate(steps):
+                action   = step.get('action', '')
+                selector = step.get('selector', '')
+                value    = _substitute(step.get('value'), template_vars, step.get('example', ''))
+                label    = step.get('label', selector)
+
+                try:
+                    if action == 'type':
+                        page.fill(selector, value, timeout=5000)
+                        logger.debug(f'[template] type {selector!r} = {value[:30]!r}')
+                    elif action == 'click':
+                        page.click(selector, timeout=5000)
+                        page.wait_for_timeout(300)
+                        logger.debug(f'[template] click {selector!r}')
+                    elif action == 'select':
+                        page.select_option(selector, value, timeout=5000)
+                        logger.debug(f'[template] select {selector!r} = {value!r}')
+                    elif action == 'upload':
+                        path = value or resume_path or ''
+                        if path:
+                            page.set_input_files(selector, path)
+                            logger.debug(f'[template] upload {selector!r}')
+                    page.wait_for_timeout(200)
+                except Exception as exc:
+                    logger.warning(f'[template] step {i} ({action} {label!r}) failed: {exc}')
+                    errors.append(f'{action} {label!r}: {str(exc)[:60]}')
+
+            # Submit — look for common submit selectors if not already covered by steps
+            submitted = False
+            for sel in (
+                'button[type="submit"]',
+                'input[type="submit"]',
+                'button:has-text("Submit application")',
+                'button:has-text("Enviar candidatura")',
+                'button:has-text("Candidatar")',
+            ):
+                try:
+                    page.click(sel, timeout=3000)
+                    submitted = True
+                    break
+                except Exception:
+                    continue
+
+            if submitted:
+                time.sleep(2)
+
+            page_text = page.content().lower()
+            confirmed = any(kw in page_text for kw in (
+                'thank', 'obrigado', 'submitted', 'received', 'application',
+            ))
+            browser.close()
+
+            if confirmed:
+                return ApplyResult(
+                    job_id=job_id, user_id=user_id, status='success',
+                    source='greenhouse',
+                )
+            return ApplyResult(
+                job_id=job_id, user_id=user_id, status='failed',
+                source='greenhouse',
+                error_message=f'Template applied but no confirmation. Errors: {errors[:3]}',
+            )
+
+    except Exception as exc:
+        logger.exception(f'[template] unhandled error: {exc}')
+        return ApplyResult(
+            job_id=job_id, user_id=user_id, status='failed',
+            source='greenhouse', error_message=f'Template error: {exc}',
+        )
+    finally:
+        if resume_path:
+            try:
+                os.unlink(resume_path)
+            except Exception:
+                pass
 
 
 # ── URL parser ────────────────────────────────────────────────────────────────
@@ -434,14 +584,38 @@ def apply_with_agent(
     user: UserProfile,
     gemini_api_key: str,
     user_id: str = '',
+    supabase: Any = None,
 ) -> ApplyResult:
-    """Try Greenhouse API; fall back to Gemini Vision agent on 401."""
+    """Try template → Greenhouse API → Gemini Vision agent (fallback on 401)."""
+
+    # 1. Recorded template (fast, deterministic)
+    if supabase:
+        try:
+            board_token, _ = _parse_url(job.get('url', ''))
+            row = (
+                supabase.table('apply_templates')
+                .select('template')
+                .eq('company', board_token)
+                .single()
+                .execute()
+            )
+            if row.data:
+                logger.info(f'[greenhouse] template found for {board_token!r} — replaying steps')
+                result = _run_template_apply(job, user, row.data['template'], user_id)
+                if result.status == 'success':
+                    return result
+                logger.warning(f'[greenhouse] template failed ({result.error_message}) — falling back')
+        except Exception as exc:
+            logger.debug(f'[greenhouse] no template for company: {exc}')
+
+    # 2. Greenhouse Boards API
     result = _try_greenhouse_api(job, user, gemini_api_key, user_id)
     if result.status == 'success':
         return result
 
+    # 3. Visual agent (API returned 401 / not open for direct submission)
     if '401' in (result.error_message or ''):
-        logger.warning(f'[greenhouse] API 401 — launching visual agent')
+        logger.warning('[greenhouse] API 401 — launching visual agent')
         return _run_visual_agent(job, user, gemini_api_key, user_id)
 
     return result

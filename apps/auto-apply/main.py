@@ -196,7 +196,7 @@ def apply_for_user(
 
     # 8. Dispatch by source
     if source == 'greenhouse':
-        result = apply_with_agent(job, user, gemini_api_key, user_id=user_id)
+        result = apply_with_agent(job, user, gemini_api_key, user_id=user_id, supabase=supabase)
     elif source == 'gupy':
         result = apply_gupy(job, user, gemini_api_key, user_id=user_id)
     else:
