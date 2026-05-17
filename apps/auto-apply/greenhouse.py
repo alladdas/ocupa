@@ -42,9 +42,10 @@ def _build_template_vars(user: UserProfile, resume_path: Optional[str]) -> dict[
         'seniority':        user.seniority or 'pleno',
         'work_model':       user.work_model_preference or 'remoto',
         'resume_pdf_path':  resume_path or '',
-        'current_salary':   user.current_salary,
-        'desired_salary':   user.desired_salary,
-        'availability':     user.availability,
+        'current_salary':      user.current_salary,
+        'desired_salary':      user.desired_salary,
+        'availability':        user.availability,
+        'sexual_orientation':  user.gender or 'Prefiro não responder',
     }
 
 

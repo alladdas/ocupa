@@ -169,6 +169,78 @@ _RECORDER_JS = r"""
 """
 
 
+# Maps the text of a clicked react-select option to (field_name, canonical_value).
+# Keyed by the option label lowercased and stripped.
+DIVERSITY_OPTION_MAP: dict[str, tuple[str, str]] = {
+    # Raça / cor
+    'branco':               ('race', 'Branco'),
+    'branca':               ('race', 'Branco'),
+    'pardo':                ('race', 'Pardo'),
+    'parda':                ('race', 'Pardo'),
+    'preto':                ('race', 'Preto'),
+    'preta':                ('race', 'Preto'),
+    'amarelo':              ('race', 'Amarelo'),
+    'amarela':              ('race', 'Amarelo'),
+    'indígena':             ('race', 'Indígena'),
+    'indigena':             ('race', 'Indígena'),
+    # Gênero
+    'mulher cis':           ('gender', 'Mulher Cis'),
+    'homem cis':            ('gender', 'Homem Cis'),
+    'mulher trans':         ('gender', 'Mulher Trans'),
+    'homem trans':          ('gender', 'Homem Trans'),
+    'não-binário':          ('gender', 'Não-binário'),
+    'nao-binario':          ('gender', 'Não-binário'),
+    'prefiro não declarar': ('gender', 'Prefiro não declarar'),
+    'prefiro nao declarar': ('gender', 'Prefiro não declarar'),
+    'prefiro não responder': ('gender', 'Prefiro não responder'),
+    'prefiro nao responder': ('gender', 'Prefiro não responder'),
+    'prefiro não informar': ('gender', 'Prefiro não informar'),
+    'prefiro nao informar': ('gender', 'Prefiro não informar'),
+    # Orientação sexual
+    'heterossexual':        ('sexual_orientation', 'Heterossexual'),
+    'bissexual':            ('sexual_orientation', 'Bissexual'),
+    'homossexual':          ('sexual_orientation', 'Homossexual'),
+    'gay':                  ('sexual_orientation', 'Gay'),
+    'lésbica':              ('sexual_orientation', 'Lésbica'),
+    'lesbica':              ('sexual_orientation', 'Lésbica'),
+}
+
+
+def _enrich_steps(steps: list[dict]) -> list[dict]:
+    """Post-process recorded steps:
+    - Map react-select option clicks to dynamic diversity variables.
+    - Map salary/availability field labels to dynamic variables.
+    """
+    for step in steps:
+        selector  = step.get('selector', '')
+        label     = step.get('label', '')
+        label_lower = label.strip().lower()
+
+        # Diversity: clicks on react-select option elements
+        if step.get('action') == 'click' and selector.startswith('#react-select'):
+            if label_lower in DIVERSITY_OPTION_MAP:
+                field, _ = DIVERSITY_OPTION_MAP[label_lower]
+                step['value']      = '{{' + field + '}}'
+                step['field_name'] = field
+                step['dynamic']    = True
+
+        # Salary / availability: any step whose form-label contains the keyword
+        if 'remuneração' in label_lower or 'salário' in label_lower or 'salario' in label_lower:
+            step['value']      = '{{current_salary}}'
+            step['field_name'] = 'current_salary'
+            step['dynamic']    = True
+        elif 'pretensão' in label_lower or 'pretensao' in label_lower:
+            step['value']      = '{{desired_salary}}'
+            step['field_name'] = 'desired_salary'
+            step['dynamic']    = True
+        elif 'disponibilidade' in label_lower:
+            step['value']      = '{{availability}}'
+            step['field_name'] = 'availability'
+            step['dynamic']    = True
+
+    return steps
+
+
 def detect_ats(url: str) -> str:
     if 'greenhouse.io' in url:
         return 'greenhouse'
@@ -253,7 +325,7 @@ def main() -> None:
         browser.close()
 
     print(f'\n📋 {len(raw_steps)} eventos capturados — deduplicando...')
-    steps = dedup_steps(raw_steps)
+    steps = _enrich_steps(dedup_steps(raw_steps))
     print(f'   {len(steps)} steps únicos após deduplicação\n')
 
     template = {
