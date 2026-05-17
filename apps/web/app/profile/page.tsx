@@ -133,6 +133,12 @@ export default function ProfilePage() {
   const [savePersonalErr, setSavePersonalErr] = useState('')
   const [savePrefsErr, setSavePrefsErr] = useState('')
   const [saveDiversityErr, setSaveDiversityErr] = useState('')
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+
+  function showToast(type: 'success' | 'error', message: string) {
+    setToast({ type, message })
+    setTimeout(() => setToast(null), 3000)
+  }
 
   const [cvLoading, setCvLoading] = useState(false)
   const [cvSaved, setCvSaved] = useState(false)
@@ -207,14 +213,16 @@ export default function ProfilePage() {
     setSavePersonalErr('')
     const { error } = await getSupabaseBrowser()
       .from('profiles')
-      .update(personal)
-      .eq('id', user.id)
+      .upsert({ id: user.id, ...personal })
     setSavingPersonal(false)
     if (error) {
+      console.error('[profile] savePersonal failed:', error)
       setSavePersonalErr(error.message)
+      showToast('error', 'Erro ao salvar dados pessoais')
     } else {
       setSavedPersonal(true)
       setTimeout(() => setSavedPersonal(false), 2500)
+      showToast('success', 'Dados pessoais salvos!')
     }
   }
 
@@ -224,14 +232,16 @@ export default function ProfilePage() {
     setSavePrefsErr('')
     const { error } = await getSupabaseBrowser()
       .from('profiles')
-      .update(prefs)
-      .eq('id', user.id)
+      .upsert({ id: user.id, ...prefs })
     setSavingPrefs(false)
     if (error) {
+      console.error('[profile] savePrefs failed:', error)
       setSavePrefsErr(error.message)
+      showToast('error', 'Erro ao salvar preferências')
     } else {
       setSavedPrefs(true)
       setTimeout(() => setSavedPrefs(false), 2500)
+      showToast('success', 'Preferências salvas!')
     }
   }
 
@@ -241,14 +251,16 @@ export default function ProfilePage() {
     setSaveDiversityErr('')
     const { error } = await getSupabaseBrowser()
       .from('profiles')
-      .update(diversity)
-      .eq('id', user.id)
+      .upsert({ id: user.id, ...diversity })
     setSavingDiversity(false)
     if (error) {
+      console.error('[profile] saveDiversity failed:', error)
       setSaveDiversityErr(error.message)
+      showToast('error', 'Erro ao salvar diversidade')
     } else {
       setSavedDiversity(true)
       setTimeout(() => setSavedDiversity(false), 2500)
+      showToast('success', 'Diversidade e inclusão salvos!')
     }
   }
 
@@ -305,6 +317,19 @@ export default function ProfilePage() {
   return (
     <div className="min-h-screen" style={{ background: 'var(--d-bg)' }}>
       <DashNav />
+
+      {/* ── Toast ─────────────────────────────────────────────────────────── */}
+      {toast && (
+        <div
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-xl transition-all"
+          style={{ background: toast.type === 'success' ? '#2f8d6a' : '#ef4444' }}
+        >
+          {toast.type === 'success'
+            ? <CheckCircle className="h-4 w-4 flex-shrink-0" />
+            : <AlertCircle className="h-4 w-4 flex-shrink-0" />}
+          {toast.message}
+        </div>
+      )}
 
       <div className="mx-auto max-w-2xl px-4 py-8">
         <h1 className="mb-6 text-2xl font-bold" style={{ color: 'var(--d-text)', letterSpacing: '-0.5px' }}>
