@@ -21,6 +21,9 @@ class UserProfile(BaseModel):
     legal_work_auth: bool = True
     gender: str = 'Prefiro não informar'
     race: str = 'Prefiro não informar'
+    current_salary: str = 'Prefiro não informar'
+    desired_salary: str = 'A combinar'
+    availability: str = 'Imediata'
 
     @property
     def full_name(self) -> str:

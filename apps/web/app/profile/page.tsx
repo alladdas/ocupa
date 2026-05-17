@@ -29,6 +29,9 @@ const JOB_TYPE_OPTS  = ['CLT', 'PJ', 'Freelance', 'Estágio', 'Temporário']
 const WORK_MODEL_OPTS = ['Remoto', 'Híbrido', 'Presencial']
 const GENDER_OPTS = ['Homem Cis', 'Mulher Cis', 'Homem Trans', 'Mulher Trans', 'Não-binário', 'Prefiro não informar']
 const RACE_OPTS = ['Branco', 'Preto', 'Pardo', 'Amarelo', 'Indígena', 'Prefiro não informar']
+const SALARY_OPTS = ['Até R$3.000', 'R$3.000–5.000', 'R$5.000–8.000', 'R$8.000–12.000', 'R$12.000–18.000', 'R$18.000–25.000', 'Acima de R$25.000', 'Prefiro não informar']
+const DESIRED_SALARY_OPTS = ['Até R$3.000', 'R$3.000–5.000', 'R$5.000–8.000', 'R$8.000–12.000', 'R$12.000–18.000', 'R$18.000–25.000', 'Acima de R$25.000', 'A combinar', 'Prefiro não informar']
+const AVAILABILITY_OPTS = ['Imediata', '15 dias', '30 dias', '45 dias', '60 dias']
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,6 +47,9 @@ interface JobPrefs {
   job_type: string
   seniority: string
   work_model: string
+  current_salary: string
+  desired_salary: string
+  availability: string
 }
 
 interface DiversityData {
@@ -56,6 +62,7 @@ type ProfileRow = PersonalData & JobPrefs & DiversityData & { [k: string]: unkno
 // ─── Shared styles ────────────────────────────────────────────────────────────
 
 const inp = 'h-11 w-full rounded-lg border border-[#e8ebe9] bg-transparent px-3.5 text-sm text-[#1d161d] outline-none transition-colors focus:border-[#2f8d6a] placeholder:text-[#c4bcc4]'
+const sel = 'h-11 w-full rounded-lg border border-[#e8ebe9] bg-white px-3.5 text-sm text-[#1d161d] outline-none transition-colors focus:border-[#2f8d6a]'
 const lbl = 'block mb-1 text-[11px] font-medium uppercase tracking-wider text-[#a89ea8]'
 
 function SaveBtn({ saving, saved, onClick, disabled }: { saving: boolean; saved: boolean; onClick: () => void; disabled?: boolean }) {
@@ -112,7 +119,7 @@ export default function ProfilePage() {
   const [personal, setPersonal] = useState<PersonalData>({
     first_name: '', last_name: '', phone: '', city: '', linkedin_url: '',
   })
-  const [prefs, setPrefs] = useState<JobPrefs>({ job_type: '', seniority: '', work_model: '' })
+  const [prefs, setPrefs] = useState<JobPrefs>({ job_type: '', seniority: '', work_model: '', current_salary: '', desired_salary: '', availability: '' })
   const [diversity, setDiversity] = useState<DiversityData>({ gender: '', race: '' })
   const [resume, setResume] = useState<{ file_name: string } | null>(null)
   const [dataLoading, setDataLoading] = useState(true)
@@ -149,7 +156,7 @@ export default function ProfilePage() {
     Promise.all([
       supabase
         .from('profiles')
-        .select('first_name, last_name, phone, city, linkedin_url, job_type, seniority, work_model, gender, race')
+        .select('first_name, last_name, phone, city, linkedin_url, job_type, seniority, work_model, gender, race, current_salary, desired_salary, availability')
         .eq('id', user.id)
         .single(),
       supabase
@@ -170,9 +177,12 @@ export default function ProfilePage() {
         })
         setCityQ(d.city ?? '')
         setPrefs({
-          job_type:   d.job_type   ?? '',
-          seniority:  d.seniority  ?? '',
-          work_model: d.work_model ?? '',
+          job_type:       d.job_type       ?? '',
+          seniority:      d.seniority      ?? '',
+          work_model:     d.work_model     ?? '',
+          current_salary: d.current_salary ?? '',
+          desired_salary: d.desired_salary ?? '',
+          availability:   d.availability   ?? '',
         })
         setDiversity({
           gender: d.gender ?? '',
@@ -487,6 +497,31 @@ export default function ProfilePage() {
                   />
                 ))}
               </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={lbl}>Remuneração atual</label>
+                <select className={sel} value={prefs.current_salary} onChange={(e) => setPrefs((p) => ({ ...p, current_salary: e.target.value }))}>
+                  <option value="">Selecione…</option>
+                  {SALARY_OPTS.map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={lbl}>Pretensão salarial</label>
+                <select className={sel} value={prefs.desired_salary} onChange={(e) => setPrefs((p) => ({ ...p, desired_salary: e.target.value }))}>
+                  <option value="">Selecione…</option>
+                  {DESIRED_SALARY_OPTS.map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className={lbl}>Disponibilidade para início</label>
+              <select className={sel} value={prefs.availability} onChange={(e) => setPrefs((p) => ({ ...p, availability: e.target.value }))}>
+                <option value="">Selecione…</option>
+                {AVAILABILITY_OPTS.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
             </div>
           </div>
 

@@ -16,6 +16,9 @@ interface Answers {
   phone: string
   city: string
   linkedin: string
+  currentSalary: string
+  desiredSalary: string
+  availability: string
   gender: string
   race: string
   disability: string
@@ -23,7 +26,7 @@ interface Answers {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const TOTAL_STEPS = 7
+const TOTAL_STEPS = 8
 
 const ACCEPTED_MIME = new Set([
   'application/pdf',
@@ -43,12 +46,15 @@ const BR_CITIES = [
 const GENDER_OPTS = ['Masculino', 'Feminino', 'Não-binário', 'Prefiro não informar']
 const RACE_OPTS = ['Branco(a)', 'Preto(a)', 'Pardo(a)', 'Amarelo(a)', 'Indígena', 'Prefiro não informar']
 const DISABILITY_OPTS = ['Nenhuma', 'Visual', 'Auditiva', 'Física', 'Intelectual', 'Prefiro não informar']
+const SALARY_OPTS = ['Até R$3.000', 'R$3.000–5.000', 'R$5.000–8.000', 'R$8.000–12.000', 'R$12.000–18.000', 'R$18.000–25.000', 'Acima de R$25.000', 'Prefiro não informar']
+const DESIRED_SALARY_OPTS = ['Até R$3.000', 'R$3.000–5.000', 'R$5.000–8.000', 'R$8.000–12.000', 'R$12.000–18.000', 'R$18.000–25.000', 'Acima de R$25.000', 'A combinar', 'Prefiro não informar']
+const AVAILABILITY_OPTS = ['Imediata', '15 dias', '30 dias', '45 dias', '60 dias']
 
 // ─── Shared styles ────────────────────────────────────────────────────────────
 
 const lbl = 'font-mono-dm block mb-1.5 text-[11px] font-medium uppercase tracking-wider text-[#a89ea8]'
-const inp =
-  'h-12 w-full rounded-lg border border-[#e8ebe9] bg-transparent px-4 text-sm text-[#1d161d] outline-none transition-colors focus:border-[#2f8d6a] placeholder:text-[#c4bcc4]'
+const inp = 'h-12 w-full rounded-lg border border-[#e8ebe9] bg-transparent px-4 text-sm text-[#1d161d] outline-none transition-colors focus:border-[#2f8d6a] placeholder:text-[#c4bcc4]'
+const sel = 'h-12 w-full rounded-lg border border-[#e8ebe9] bg-white px-4 text-sm text-[#1d161d] outline-none transition-colors focus:border-[#2f8d6a]'
 
 function Btn({
   children, onClick, disabled, type = 'button',
@@ -111,6 +117,7 @@ export default function GetStartedPage() {
   const [answers, setAnswers] = useState<Answers>({
     cvFile: null, cvReady: false, firstName: '', lastName: '',
     phone: '', city: '', linkedin: '',
+    currentSalary: '', desiredSalary: '', availability: '',
     gender: '', race: '', disability: '',
   })
 
@@ -130,9 +137,14 @@ export default function GetStartedPage() {
         const userId = data?.session?.user?.id
         if (!userId) return
 
+        const patch: Record<string, unknown> = { onboarding_completed: true }
+        if (answers.currentSalary) patch.current_salary = answers.currentSalary
+        if (answers.desiredSalary) patch.desired_salary = answers.desiredSalary
+        if (answers.availability)  patch.availability   = answers.availability
+
         const { error } = await getSupabaseBrowser()
           .from('profiles')
-          .update({ onboarding_completed: true })
+          .update(patch)
           .eq('id', userId)
 
         if (error) {
@@ -288,7 +300,7 @@ export default function GetStartedPage() {
       case 1:
         return (
           <>
-            <StepHeader badge="Passo 1 de 7" title="Envie seu currículo" sub="Salvamos seu arquivo para adaptar automaticamente a cada vaga que você aplicar." />
+            <StepHeader badge="Passo 1 de 8" title="Envie seu currículo" sub="Salvamos seu arquivo para adaptar automaticamente a cada vaga que você aplicar." />
             <div
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) void handleCvDrop(f) }}
@@ -344,14 +356,15 @@ export default function GetStartedPage() {
       case 2:
         return (
           <>
-            <StepHeader badge="Passo 2 de 7" title="Vamos completar seu perfil" sub="Precisamos de alguns dados para personalizar suas candidaturas." />
+            <StepHeader badge="Passo 2 de 8" title="Vamos completar seu perfil" sub="Precisamos de alguns dados para personalizar suas candidaturas." />
             <div className="mt-6 rounded-xl border p-5" style={{ borderColor: '#e8ebe9' }}>
               <div className="flex flex-col gap-3">
                 {[
                   { n: '3–4', label: 'Nome e telefone' },
                   { n: '5',   label: 'Sua cidade' },
                   { n: '6',   label: 'LinkedIn (opcional)' },
-                  { n: '7',   label: 'Diversidade & Inclusão' },
+                  { n: '7',   label: 'Remuneração e disponibilidade' },
+                  { n: '8',   label: 'Diversidade & Inclusão' },
                 ].map((item) => (
                   <div key={item.n} className="flex items-center gap-3">
                     <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-bold" style={{ background: 'rgba(47,141,106,0.1)', color: '#2f8d6a' }}>
@@ -372,7 +385,7 @@ export default function GetStartedPage() {
       case 3:
         return (
           <>
-            <StepHeader badge="Passo 3 de 7" title="Seu nome completo" sub="Como você quer aparecer nas candidaturas." />
+            <StepHeader badge="Passo 3 de 8" title="Seu nome completo" sub="Como você quer aparecer nas candidaturas." />
             <div className="mt-6 flex flex-col gap-4">
               <div>
                 <label className={lbl}>Primeiro nome</label>
@@ -393,7 +406,7 @@ export default function GetStartedPage() {
       case 4:
         return (
           <>
-            <StepHeader badge="Passo 4 de 7" title="Seu telefone" sub="Para que recrutadores entrem em contato." />
+            <StepHeader badge="Passo 4 de 8" title="Seu telefone" sub="Para que recrutadores entrem em contato." />
             <div className="mt-6">
               <label className={lbl}>Telefone</label>
               <input className={inp} placeholder="(11) 99999-9999" value={answers.phone} onChange={(e) => patch({ phone: formatPhone(e.target.value) })} inputMode="numeric" autoFocus />
@@ -408,7 +421,7 @@ export default function GetStartedPage() {
       case 5:
         return (
           <>
-            <StepHeader badge="Passo 5 de 7" title="Sua cidade" sub="Usamos isso para filtrar vagas presenciais." />
+            <StepHeader badge="Passo 5 de 8" title="Sua cidade" sub="Usamos isso para filtrar vagas presenciais." />
             <div className="relative mt-6">
               <label className={lbl}>Cidade</label>
               <input
@@ -440,7 +453,7 @@ export default function GetStartedPage() {
       case 6:
         return (
           <>
-            <StepHeader badge="Passo 6 de 7" title="Seu LinkedIn" sub="Usamos para complementar seu perfil e aplicar em vagas que exigem." />
+            <StepHeader badge="Passo 6 de 8" title="Seu LinkedIn" sub="Usamos para complementar seu perfil e aplicar em vagas que exigem." />
             <div className="mt-6">
               <label className={lbl}>URL do LinkedIn</label>
               <div className="relative">
@@ -455,11 +468,46 @@ export default function GetStartedPage() {
           </>
         )
 
-      // ── Step 7: D&I ──────────────────────────────────────────────────────
+      // ── Step 7: Salary & availability ────────────────────────────────────
       case 7:
         return (
           <>
-            <StepHeader badge="Passo 7 de 7" title="Diversidade & Inclusão" sub="Opcional. Usado apenas para vagas com cotas. Nunca compartilhado sem permissão." />
+            <StepHeader badge="Passo 7 de 8" title="Remuneração e disponibilidade" sub="Usado para responder perguntas de salário e prazo de início nas candidaturas." />
+            <div className="mt-6 flex flex-col gap-4">
+              <div>
+                <label className={lbl}>Remuneração atual</label>
+                <select className={sel} value={answers.currentSalary} onChange={(e) => patch({ currentSalary: e.target.value })}>
+                  <option value="">Selecione…</option>
+                  {SALARY_OPTS.map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={lbl}>Pretensão salarial</label>
+                <select className={sel} value={answers.desiredSalary} onChange={(e) => patch({ desiredSalary: e.target.value })}>
+                  <option value="">Selecione…</option>
+                  {DESIRED_SALARY_OPTS.map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={lbl}>Disponibilidade para início</label>
+                <select className={sel} value={answers.availability} onChange={(e) => patch({ availability: e.target.value })}>
+                  <option value="">Selecione…</option>
+                  {AVAILABILITY_OPTS.map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="mt-6 flex flex-col gap-2">
+              <Btn onClick={next} disabled={!answers.currentSalary || !answers.desiredSalary || !answers.availability}>Continuar</Btn>
+              <SkipBtn onClick={next} />
+            </div>
+          </>
+        )
+
+      // ── Step 8: D&I ──────────────────────────────────────────────────────
+      case 8:
+        return (
+          <>
+            <StepHeader badge="Passo 8 de 8" title="Diversidade & Inclusão" sub="Opcional. Usado apenas para vagas com cotas. Nunca compartilhado sem permissão." />
             <div className="mt-6 flex flex-col gap-5">
               <ChipGroup label="Gênero" options={GENDER_OPTS} selected={answers.gender} onSelect={(v) => patch({ gender: v })} />
               <ChipGroup label="Raça / Cor" options={RACE_OPTS} selected={answers.race} onSelect={(v) => patch({ race: v })} />

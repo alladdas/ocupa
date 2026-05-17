@@ -54,7 +54,7 @@ def _fetch_job(supabase: Client, job_id: str) -> Optional[dict]:
 def _fetch_profile(supabase: Client, user_id: str) -> Optional[dict]:
     row = (
         supabase.table('profiles')
-        .select('first_name, last_name, phone, city, linkedin_url, seniority, work_model, gender, race, ats_profile_id')
+        .select('first_name, last_name, phone, city, linkedin_url, seniority, work_model, gender, race, current_salary, desired_salary, availability, ats_profile_id')
         .eq('id', user_id)
         .single()
         .execute()
@@ -190,6 +190,9 @@ def apply_for_user(
         legal_work_auth=True,
         gender=profile.get('gender') or 'Prefiro não informar',
         race=profile.get('race') or 'Prefiro não informar',
+        current_salary=profile.get('current_salary') or 'Prefiro não informar',
+        desired_salary=profile.get('desired_salary') or 'A combinar',
+        availability=profile.get('availability') or 'Imediata',
     )
 
     logger.info(f'[main] applying for user {user_id} → job {job_id} ({source})')

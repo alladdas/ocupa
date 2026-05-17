@@ -42,6 +42,9 @@ def _build_template_vars(user: UserProfile, resume_path: Optional[str]) -> dict[
         'seniority':        user.seniority or 'pleno',
         'work_model':       user.work_model_preference or 'remoto',
         'resume_pdf_path':  resume_path or '',
+        'current_salary':   user.current_salary,
+        'desired_salary':   user.desired_salary,
+        'availability':     user.availability,
     }
 
 
@@ -378,6 +381,9 @@ def _run_visual_agent(
                     f'Modelo preferido: {user.work_model_preference or "Híbrido"}\n'
                     f'Gênero: {user.gender or "Prefiro não informar"}\n'
                     f'Raça/Cor: {user.race or "Prefiro não informar"}\n'
+                    f'Remuneração atual: {user.current_salary}\n'
+                    f'Pretensão salarial: {user.desired_salary}\n'
+                    f'Disponibilidade para início: {user.availability}\n'
                     f'Nacionalidade: Brasileiro\n'
                     f'É latino/hispânico: Sim\n'
                     f'PCD: Não\n'
@@ -389,8 +395,8 @@ def _run_visual_agent(
                     f'- "Como prefere ser chamado?" → {user.first_name}\n'
                     f'- "Conte sobre você" → use o currículo acima\n'
                     f'- "Por que quer trabalhar aqui?" → mencione crescimento profissional e alinhamento com a empresa\n'
-                    f'- "Qual sua pretensão salarial?" → "A combinar"\n'
-                    f'- "Disponibilidade para início?" → "Imediata"\n'
+                    f'- "Qual sua pretensão salarial?" → "{user.desired_salary}"\n'
+                    f'- "Disponibilidade para início?" → "{user.availability}"\n'
                     f'- Campos de texto livre → máximo 2-3 frases, profissional e direto\n\n'
                     f'ESTADO:\n'
                     f'Já preenchido: {state["fields_filled"][-10:]}\n'
