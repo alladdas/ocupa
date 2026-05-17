@@ -94,14 +94,17 @@ def _download_pdf(supabase: Client, storage_path: str) -> Optional[bytes]:
 
 def _save_result(supabase: Client, result: ApplyResult) -> None:
     try:
-        supabase.table('apply_results').insert({
-            'job_id': result.job_id,
-            'user_id': result.user_id,
-            'status': result.status,
-            'source': result.source,
+        row: dict = {
+            'job_id':        result.job_id,
+            'user_id':       result.user_id,
+            'status':        result.status,
+            'source':        result.source,
             'error_message': result.error_message,
-            'applied_at': result.applied_at.isoformat(),
-        }).execute()
+            'applied_at':    result.applied_at.isoformat(),
+        }
+        if result.fields_filled is not None:
+            row['fields_filled'] = result.fields_filled
+        supabase.table('apply_results').insert(row).execute()
     except Exception as exc:
         logger.warning(f'Could not save apply_result: {exc}')
 

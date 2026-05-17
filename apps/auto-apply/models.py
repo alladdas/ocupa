@@ -38,4 +38,5 @@ class ApplyResult(BaseModel):
     status: str  # success / failed / skipped
     source: Optional[str] = None
     error_message: Optional[str] = None
+    fields_filled: Optional[list] = None
     applied_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

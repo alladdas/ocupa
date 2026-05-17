@@ -92,6 +92,7 @@ def _run_template_apply(
 
     template_vars = _build_template_vars(user, resume_path)
     errors: list[str] = []
+    fields_filled: list[dict] = []
 
     try:
         with sync_playwright() as p:
@@ -110,19 +111,23 @@ def _run_template_apply(
                 try:
                     if action == 'type':
                         page.fill(selector, value, timeout=5000)
-                        logger.debug(f'[template] type {selector!r} = {value[:30]!r}')
+                        logger.info(f"[template] ✓ type '{selector}' = '{value[:50]}'")
+                        fields_filled.append({'action': 'type', 'selector': selector, 'label': label, 'value': value[:50]})
                     elif action == 'click':
                         page.click(selector, timeout=5000)
                         page.wait_for_timeout(300)
-                        logger.debug(f'[template] click {selector!r}')
+                        logger.info(f"[template] ✓ click '{selector}' (label: '{label[:40]}')")
+                        fields_filled.append({'action': 'click', 'selector': selector, 'label': label[:40]})
                     elif action == 'select':
                         page.select_option(selector, value, timeout=5000)
-                        logger.debug(f'[template] select {selector!r} = {value!r}')
+                        logger.info(f"[template] ✓ type '{selector}' = '{value[:50]}'")
+                        fields_filled.append({'action': 'select', 'selector': selector, 'label': label, 'value': value[:50]})
                     elif action == 'upload':
                         path = value or resume_path or ''
                         if path:
                             page.set_input_files(selector, path)
-                            logger.debug(f'[template] upload {selector!r}')
+                            logger.info(f"[template] ✓ upload '{selector}'")
+                            fields_filled.append({'action': 'upload', 'selector': selector, 'label': label})
                     page.wait_for_timeout(200)
                 except Exception as exc:
                     logger.warning(f'[template] step {i} ({action} {label!r}) failed: {exc}')
@@ -156,11 +161,11 @@ def _run_template_apply(
             if confirmed:
                 return ApplyResult(
                     job_id=job_id, user_id=user_id, status='success',
-                    source='greenhouse',
+                    source='greenhouse', fields_filled=fields_filled,
                 )
             return ApplyResult(
                 job_id=job_id, user_id=user_id, status='failed',
-                source='greenhouse',
+                source='greenhouse', fields_filled=fields_filled,
                 error_message=f'Template applied but no confirmation. Errors: {errors[:3]}',
             )
 
