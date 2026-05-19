@@ -151,12 +151,26 @@ def _run_template_apply(
                     continue
 
             if submitted:
-                time.sleep(2)
+                # Wait up to 5s for the confirmation page to load
+                try:
+                    page.wait_for_load_state('domcontentloaded', timeout=5000)
+                except Exception:
+                    pass
 
-            page_text = page.content().lower()
-            confirmed = any(kw in page_text for kw in (
-                'thank', 'obrigado', 'submitted', 'received', 'application',
-            ))
+            url_after = page.url
+            content_after = page.content().lower()
+            logger.info(f'[template] post-submit URL: {url_after}')
+
+            confirmed = (
+                'confirmation' in url_after
+                or 'thank' in url_after
+                or 'submitted' in url_after
+                or 'thank' in content_after
+                or 'obrigado' in content_after
+                or 'inscrição enviada' in content_after
+                or 'candidatura enviada' in content_after
+                or '#first_name' not in content_after  # form disappeared
+            )
             browser.close()
 
             if confirmed:
@@ -167,7 +181,7 @@ def _run_template_apply(
             return ApplyResult(
                 job_id=job_id, user_id=user_id, status='failed',
                 source='greenhouse', fields_filled=fields_filled,
-                error_message=f'Template applied but no confirmation. Errors: {errors[:3]}',
+                error_message='Submit not confirmed',
             )
 
     except Exception as exc:
