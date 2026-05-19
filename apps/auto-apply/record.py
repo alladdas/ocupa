@@ -361,7 +361,7 @@ def main() -> None:
             'ats':        template['ats'],
             'template':   template,
             'updated_at': datetime.now().isoformat(),
-        }).execute()
+        }, on_conflict='company').execute()
         print('✅ Template salvo no Supabase!')
     except Exception as exc:
         print(f'ERRO ao salvar no Supabase: {exc}')
